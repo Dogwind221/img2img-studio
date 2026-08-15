@@ -1,0 +1,22 @@
+# 凭据与敏感文件
+.env
+.env.*
+!.env.example
+cookies.json
+access_tokens.json
+*_token*
+secrets*
+
+# 生成产物
+generated-images/
+output/
+*.png.bak
+
+# 构建/依赖
+node_modules/
+*.exe
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
