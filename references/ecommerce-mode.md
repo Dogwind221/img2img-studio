@@ -156,11 +156,21 @@ Campaign Style Lock: consistent premium ecommerce visual system across the entir
 
 **视觉节奏**：连续图背景色交替 2-3 种（`#FFFFFF` / `#F5F1E8` / 品牌深色），防视觉疲劳。
 
-## ⑨ 可选预处理（designkit 能力）
+## ⑨ 可选预处理（本地工具 + designkit）
 
-用户要求「先抠图/去背景/变清晰再生成」、或商品图带杂乱背景时：
-- 若有 DESIGNKIT 凭据（美图设计室）：走 designkit 抠图/修复能力，返回透明底/增强图作为生成参考图
-- 否则：在 Prompt 中要求 `clean cutout product on transparent or solid background`，用 vision 描述替代
+用户要求「先抠图/去背景/变清晰再生成」、或商品图带杂乱背景时，**优先用本地零依赖工具**（`scripts/preprocess/`，Windows 内置 System.Drawing）：
+
+| 工具 | 命令 | 用途 |
+|---|---|---|
+| **抠图 → 透明 PNG** | `pwsh scripts/preprocess/cutout.ps1 -ImagePath <图> -OutputPath <out.png> [-Tolerance 30] [-Background auto\|white\|black\|#RRGGBB]` | 纯色/白底商品图去背景 → 透明底**直接当生图参考图**（比带背景图作参考质量高得多）；复杂背景改用 AI 抠图（designkit / vision-toolkit / ChatGPT 网页） |
+| **主色提取** | `pwsh scripts/preprocess/extract-palette.ps1 -ImagePath <图> -MaxColors 5` | 输出 `[{hex, coverage}]` → **精确色板喂进生成 Prompt**（比 LLM 描述的 hex 更准，替代「从识图猜主色」） |
+| **元素定位 + 裁剪** | ① `vision.js <图> --schema ground`（输出主体 bbox 归一化 x/y/w/h）② `pwsh scripts/preprocess/crop.ps1 -ImagePath <图> -OutputPath <主体.png> -X .. -Y .. -W .. -H ..` | 定位产品区域 → **裁剪出主体再生成**（避免背景干扰、聚焦产品） |
+
+使用规则：
+- 白底/浅色底商品图 → 抠图后透明 PNG 作为 `--image` 参考图（i2i 时主体一致性最好）
+- 生成前把 `extract-palette` 的主色 hex 写进 Prompt 的色板段（配合 ecom-details 铁律「颜色用 hex」）
+- 无本地工具的复杂背景 → designkit（需 DESIGNKIT 凭据）或 Prompt 中要求 `clean cutout product on transparent or solid background`
+- **不要**：把带杂背景的原图直接作参考图（会污染生成背景）；把主色交给模型"猜"
 
 ## ⑩ 生成 + 自审
 

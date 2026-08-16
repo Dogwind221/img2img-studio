@@ -67,19 +67,19 @@ node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图�
 node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" --url "<图片URL>" "<问题>"
 ```
 
-**photo-art 模式的分析问题**（要求输出 JSON，无其他文字；PowerShell 里用**单引号**包裹，不要用双引号+`\"` 转义，否则会解析失败）：
+**photo-art 模式**（用 `--schema img2img` 强制结构化 JSON 契约：summary/subject/composition/visual(hex 主色)/semantics，输出损坏自动重试）：
 
 ```powershell
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" '请用中文输出这段 JSON：{"subject":"主体","pose_action":"姿态/动作","objects":["关键物件"],"composition":"构图","lighting":"光线","colors_hex":["主色hex 2-4个"],"materials":["材质"],"mood":"情绪/氛围","text_in_image":"画面文字","background":"背景","style_hints":"风格线索(年代/风格/流派)"}'
+node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema img2img
 ```
 
-**ecommerce 模式的分析问题**（要求输出 JSON，无其他文字）：
+**ecommerce 模式**（用 `--schema ecom` 输出商品结构化 JSON）：
 
 ```powershell
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" '请用中文输出这段 JSON：{"product_name":"商品名称","category":"品类","material":"材质","color_hex":"主色hex","shape":"形状结构","key_features":["核心卖点3-5条"],"text_in_image":"商品图上的文字","background":"背景描述","defects":["瑕疵/需要去除的元素"],"target_audience":"适用人群"}'
+node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema ecom
 ```
 
-多图逐张识别后合并。识图失败（配额/网络）时如实告知用户，不要编造图片内容。
+识图前可先 `vision.js guard` 检查供应商可用性；`--list-providers` 查看已配置供应商（不泄露密钥）。多图逐张识别后合并。识图失败（配额/网络）时如实告知用户，不要编造图片内容。
 
 ## L2 生成（generate_image.mjs v2）
 
@@ -103,6 +103,8 @@ node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs"
 供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
 
 **生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
+
+**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。
 
 ### 身份保持参考图准则（重要）
 
