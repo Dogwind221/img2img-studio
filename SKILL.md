@@ -102,6 +102,15 @@ node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs"
 
 供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
 
+**Qoder CLI 生图（2026-08-17 已实测）**：`--provider qoder` 直接让 Qoder 的 **ImageGen 工具**出图（不消耗 DashScope 额度）：
+```bash
+node scripts/generate_image.mjs --provider qoder --prompt "柴犬戴飞行员眼镜，赛博朋克" --size 1:1 --output-dir "输出目录"
+# t2i/i2i 均可（i2i 传 --image 参考图，Qoder 视觉理解后按参考生成）；输出自动复制到 --output-dir
+```
+- 依赖：`npm i -g @qodercn-ai/qoderclicn` 已装 + `qoderclicn login` 已登录（浏览器授权一次）
+- 模型：`QODER_IMAGE_MODEL` 可覆盖（默认 Qwen3.8-Max）；尺寸 ImageGen 内部决定，脚本提示尽量接近
+- 注意：CLI 需已登录态；输出文件先落在 `F:\dsh\vibe_images\`，脚本复制到输出目录
+
 **生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
 
 **图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。

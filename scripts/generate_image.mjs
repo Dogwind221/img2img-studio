@@ -70,9 +70,9 @@ loadDotEnv(path.resolve(__dirname, "..", ".env"));
 // 回退读取 dsh-vision-skill 的 .env（复用识图 key 做图生图）：优先相邻目录，其次 ~/.agents/skills
 loadDotEnv(path.resolve(__dirname, "..", "..", "dsh-vision-skill", "scripts", ".env"));
 loadDotEnv(path.resolve(os.homedir(), ".agents", "skills", "dsh-vision-skill", "scripts", ".env"));
-if (ENV.DSH_SKILLS_DIR) loadDotEnv(path.resolve(ENV.DSH_SKILLS_DIR, "dsh-vision-skill", "scripts", ".env"));
 
 const ENV = process.env;
+if (ENV.DSH_SKILLS_DIR) loadDotEnv(path.resolve(ENV.DSH_SKILLS_DIR, "dsh-vision-skill", "scripts", ".env"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ---------- CLI ---------- */
@@ -238,6 +238,14 @@ function detectProviders() {
     id: "codex-cli", name: "Codex CLI（ChatGPT/Codex 订阅）", configured: codexFound,
     base: "codex", model: "-", key: "", keyMasked: "-",
     detail: codexFound ? "已检测到 codex CLI；当前会话若无 imagegen 工具/OPENAI_API_KEY 则无法出图（实测：需登录态 + imagegen 权限）" : "需要 codex CLI 已安装并登录（可选）",
+  });
+
+  const qoderBundle = path.join(os.homedir(), "AppData", "Roaming", "npm", "node_modules", "@qodercn-ai", "qoderclicn", "bundle", "qoderclicn.js");
+  const qoderFound = fs.existsSync(qoderBundle);
+  list.push({
+    id: "qoder", name: "Qoder CLI（ImageGen 工具）", configured: qoderFound,
+    base: "qoderclicn", model: ENV.QODER_IMAGE_MODEL || "Qwen3.8-Max（ImageGen）", key: "", keyMasked: "-",
+    detail: qoderFound ? "已检测到 qoderclicn；需已登录（qoderclicn login，2026-08-17 已实测可用）" : "需要 npm i -g @qodercn-ai/qoderclicn 并 qoderclicn login",
   });
   return list;
 }
@@ -484,6 +492,34 @@ async function codexCliGenerate({ prompt, refs, size, n }) {
   return { _codexFile: m[1], data: [] };
 }
 
+/* ---------- Qoder CLI（ImageGen 工具生图；需 qoderclicn 已登录） ---------- */
+function qoderCliBinary() {
+  const bundle = path.join(os.homedir(), "AppData", "Roaming", "npm", "node_modules", "@qodercn-ai", "qoderclicn", "bundle", "qoderclicn.js");
+  if (fs.existsSync(bundle)) return { cmd: process.execPath, args: [bundle] };
+  return { cmd: "qoderclicn", args: [] };
+}
+async function qoderCliGenerate({ prompt, refs, size, n, outputDir }) {
+  const bin = qoderCliBinary();
+  const sizeHint = size ? ` 图片尺寸尽量为 ${size}（无法精确控制时按该比例）。` : "";
+  const refHint = refs.length ? " 请参考附件图片的主体与风格进行生成。" : "";
+  const cliPrompt = `请使用 ImageGen 工具生成一张图片。要求: ${prompt}${sizeHint}${refHint} 生成完成后，只输出图片文件的完整路径（一行），不要其他任何文字。`;
+  const args = [...bin.args, "-p", cliPrompt, "-m", ENV.QODER_IMAGE_MODEL || "Qwen3.8-Max", "--permission-mode", "dont_ask"];
+  for (const f of refs) args.push("--attachment", path.resolve(f));
+  const { execFile } = await import("node:child_process");
+  const out = await new Promise((resolve, reject) => {
+    execFile(bin.cmd, args, { timeout: 300000, maxBuffer: 32 * 1024 * 1024 }, (err, stdout) => (err ? reject(new Error(`Qoder CLI: ${err.message}`)) : resolve(String(stdout))));
+  });
+  const m = out.match(/([A-Za-z]:\\[^\s`"'，。]+\.(?:png|jpg|jpeg|webp))/i);
+  if (!m) throw new Error(`Qoder 未返回图片路径: ${out.slice(0, 300)}`);
+  const src = m[1].trim();
+  if (!fs.existsSync(src)) throw new Error(`Qoder 返回的图片不存在: ${src}`);
+  const dir = outputDir || path.resolve("generated-images");
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, `img-${Date.now()}-${Math.floor(Math.random() * 1000)}-01.png`);
+  fs.copyFileSync(src, dest);
+  return { _qoderFile: dest, data: [] };
+}
+
 /* ---------- 保存结果 ---------- */
 async function saveImages(resp, outDir, prefix) {
   fs.mkdirSync(outDir, { recursive: true });
@@ -519,6 +555,7 @@ async function saveImages(resp, outDir, prefix) {
     items.push(file);
   }
   if (resp?._codexFile) items.push(resp._codexFile);
+  if (resp?._qoderFile) items.push(resp._qoderFile);
   if (!items.length && data.length) throw new Error("无法从响应中解析图片数据");
   return items;
 }
@@ -531,7 +568,15 @@ async function generateOnce(task, providers, retries) {
   if (images.length) sizePx = clampForI2i(sizePx);
   const configured = providers.filter((p) => p.configured);
   const wanted = providerId && providerId !== "auto" ? providers.find((p) => p.id === providerId) : null;
-  const chain = wanted ? [wanted] : configured;
+  // auto 时按 GEN_PROVIDER_ORDER（插件面板的优先级排序）调整链顺序
+  let chain = wanted ? [wanted] : configured;
+  if (!wanted) {
+    const order = (ENV.GEN_PROVIDER_ORDER || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (order.length) {
+      const byId = new Map(configured.map((p) => [p.id, p]));
+      chain = [...order.map((id) => byId.get(id)).filter(Boolean), ...configured.filter((p) => !order.includes(p.id))];
+    }
+  }
   if (wanted && !wanted.configured) throw new Error(`供应商 ${providerId} 未配置`);
   const errors = [];
   for (const p of chain) {
@@ -546,6 +591,7 @@ async function generateOnce(task, providers, retries) {
         else if (p.id === "minimax") resp = await minimaxGenerate({ ...args, provider: p });
         else if (p.id === "local") resp = await localGenerate({ ...args, base: p.base });
         else if (p.id === "codex-cli") resp = await codexCliGenerate({ ...args });
+        else if (p.id === "qoder") resp = await qoderCliGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images") });
         else throw new Error(`未知供应商 ${p.id}`);
         return { ok: true, provider: p.id, model: resp?._model || p.model, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
       } catch (e) {
