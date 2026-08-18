@@ -38,7 +38,7 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 **任何生图任务开始前**，先按 `references/routing-gate.md` 执行路由门：用 AskUserQuestion 问清三件事，再进入对应工作流。**禁止不问直接生成。**
 
-1. **Q1 生成通道**：展示可用通道清单（dashscope 默认推荐 / chatgpt-web / openai / zai / seedream / minimax / local / codex-cli），用户选一个；无偏好 → dashscope。
+1. **Q1 生成通道**：展示可用通道清单（dashscope 默认推荐 / chatgpt-web / openai / zai / seedream / minimax / local / codex-cli / **baoyu 引擎** / qoder），用户选一个；无偏好 → dashscope。
 2. **Q2 风格/场景**：展示 photo-art 六子风格（editorial / revival / fusion / zine-gathered / zine-distill / zine-minimal）与 ecommerce 类型清单，用户选；无偏好 → 看图片内容或默认 fusion。
 3. **Q3+ 细化需求**（按需 2-3 个）：画幅比例、质量 1k/2k、图内文字（精确文案）、参考图/主体保留、数量、情绪/变体、平台规范。有合理默认的不追问。
 4. **路由执行**：
@@ -110,6 +110,28 @@ node scripts/generate_image.mjs --provider qoder --prompt "柴犬戴飞行员眼
 - 依赖：`npm i -g @qodercn-ai/qoderclicn` 已装 + `qoderclicn login` 已登录（浏览器授权一次）
 - 模型：`QODER_IMAGE_MODEL` 可覆盖（默认 Qwen3.8-Max）；尺寸 ImageGen 内部决定，脚本提示尽量接近
 - 注意：CLI 需已登录态；输出文件先落在 `F:\dsh\vibe_images\`，脚本复制到输出目录
+
+### 宝玉生图引擎（baoyu-image-gen，融合自 JimLiu/baoyu-skills）
+
+第二套生成通道：**12 家官方 API 直连**（OpenAI GPT Image 2 / Azure / Google / OpenRouter /
+DashScope / Z.AI / MiniMax / Jimeng 即梦 / Seedream / Replicate / Agnes / codex-cli）。
+运行需 **bun**（已装）；配置 `~/.baoyu-skills/baoyu-image-gen/EXTEND.md`（已预置 dashscope）。
+
+```powershell
+$BAOYU = "engines/baoyu-image-gen/scripts/main.ts"
+# 文生图
+bun $BAOYU --prompt "..." --provider dashscope --image "out.png" --json
+# 图生图（--ref 参考图，Google/OpenAI/Azure/OpenRouter/Replicate/MiniMax/Seedream 5.0/DashScope wan2.7 支持）
+bun $BAOYU --prompt "..." --ref "参考图.png" --provider openai --image "out.png"
+# 比例/批量
+bun $BAOYU --prompt "..." --ar 16:9 --quality 2k --provider zai --image "out.png"
+bun $BAOYU --batchfile batch.json --jobs 4
+```
+
+- **何时用它**：用户指定 12 家官方 API 中的某个（尤其 Google/Azure/Replicate/即梦）、或 generate_image.mjs 不支持的能力（身份保持参考图面更广）
+- key 与 dsh-vision-config 面板/现有 .env 同源（DASHSCOPE_API_KEY / ZAI_API_KEY / MINIMAX_API_KEY / ARK_API_KEY 等）
+- 中文 + DSH 适配细节见 `references/baoyu-dsh-guide.md`
+- ⚠️ DashScope 账号欠费时 qwen-image 返回 400 Arrearage → 换 provider 或充值
 
 **生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
 
