@@ -781,6 +781,22 @@ async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) 
 }
 
 /* ---------- 单次生成（含重试） ---------- */
+
+/**
+ * 按 GEN_PROVIDER_ORDER（面板排序）调整已配置通道的顺序；未知 id 忽略。
+ * @param {Array} configured - 已配置的通道。
+ * @returns {string[]} 通道 id 顺序。
+ */
+function orderedChain(configured) {
+  const order = (ENV.GEN_PROVIDER_ORDER || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (!order.length) return configured.map((p) => p.id);
+  const byId = new Map(configured.map((p) => [p.id, p]));
+  return [
+    ...order.map((id) => byId.get(id)).filter(Boolean).map((p) => p.id),
+    ...configured.filter((p) => !order.includes(p.id)).map((p) => p.id),
+  ];
+}
+
 async function generateOnce(task, providers, retries) {
   const { prompt, size, quality, n, providerId, model, dialect } = task;
   const images = task.images || (task.image ? [task.image] : []) || task.refs || [];
@@ -789,14 +805,7 @@ async function generateOnce(task, providers, retries) {
   const configured = providers.filter((p) => p.configured);
   const wanted = providerId && providerId !== "auto" ? providers.find((p) => p.id === providerId) : null;
   // auto 时按 GEN_PROVIDER_ORDER（插件面板的优先级排序）调整链顺序
-  let chain = wanted ? [wanted] : configured;
-  if (!wanted) {
-    const order = (ENV.GEN_PROVIDER_ORDER || "").split(",").map((s) => s.trim()).filter(Boolean);
-    if (order.length) {
-      const byId = new Map(configured.map((p) => [p.id, p]));
-      chain = [...order.map((id) => byId.get(id)).filter(Boolean), ...configured.filter((p) => !order.includes(p.id))];
-    }
-  }
+  const chain = wanted ? [wanted] : orderedChain(configured).map((id) => configured.find((p) => p.id === id)).filter(Boolean);
   if (wanted && !wanted.configured) throw new Error(`供应商 ${providerId} 未配置`);
   const errors = [];
   for (const p of chain) {
@@ -888,7 +897,7 @@ async function main() {
       version: VERSION,
       prompt: prompt.slice(0, 200) + (prompt.length > 200 ? "…" : ""),
       refs: a.images, size: sizePx, quality: a.quality, n: a.n,
-      providerChain: (a.provider && a.provider !== "auto" ? [a.provider] : configured.map((p) => p.id)),
+      providerChain: (a.provider && a.provider !== "auto" ? [a.provider] : orderedChain(configured)),
       model: a.model || "(默认链)", outputDir: a.outputDir || "./generated-images",
     }, null, 2));
     process.exit(0);
