@@ -520,7 +520,7 @@ async function codexCliGenerate({ prompt, refs, size, n }) {
   for (const f of refs) args.push("--image", path.resolve(f));
   const stdin = `Use imagegen to create an image with this request:\n${prompt}\n\nSize: ${size}\nRequirements:\n- Generate the image directly\n- Do not provide explanation\n- Return only the saved image file path`;
   const out = await new Promise((resolve, reject) => {
-    const child = execFile(bin, [...args, "-"], { timeout: 90000, maxBuffer: 64 * 1024 * 1024 }, (err, stdout) => (err ? reject(new Error(err.message)) : resolve(String(stdout))));
+    const child = execFile(bin, [...args, "-"], { timeout: 90000, maxBuffer: 64 * 1024 * 1024, env: childEnvWithProxy() }, (err, stdout) => (err ? reject(new Error(err.message)) : resolve(String(stdout))));
     child.stdin.write(stdin);
     child.stdin.end();
   });
@@ -640,7 +640,7 @@ async function directEngineGenerate({ prompt, refs, size, n, outputDir, model, d
   if (model) args.push("--model", model);
   if (refs.length) args.push("--ref", ...refs.map((f) => path.resolve(f)));
   const { execFile } = await import("node:child_process");
-  const childEnv = { ...ENV };
+  const childEnv = childEnvWithProxy();
   // 与本脚本的别名保持一致：DashScope key 常以 VISION_API_KEY 形式存在，OpenAI 兼容通道用 IMG_*
   if (!childEnv.DASHSCOPE_API_KEY && childEnv.VISION_API_KEY) childEnv.DASHSCOPE_API_KEY = childEnv.VISION_API_KEY;
   if (!childEnv.OPENAI_API_KEY && childEnv.IMG_API_KEY) childEnv.OPENAI_API_KEY = childEnv.IMG_API_KEY;
@@ -656,6 +656,41 @@ async function directEngineGenerate({ prompt, refs, size, n, outputDir, model, d
     throw new Error(`直连引擎 ${sub} 未产出图片（输出: ${stdout.slice(0, 300)}）`);
   }
   return { _directFile: out };
+}
+
+/** 解析代理：环境变量优先，其次 Windows 系统代理（注册表）。子进程用。 */
+let cachedSystemProxy;
+function systemProxyUrl() {
+  if (ENV.HTTPS_PROXY || ENV.https_proxy) return ENV.HTTPS_PROXY || ENV.https_proxy;
+  if (ENV.HTTP_PROXY || ENV.http_proxy) return ENV.HTTP_PROXY || ENV.http_proxy;
+  if (cachedSystemProxy !== undefined) return cachedSystemProxy;
+  cachedSystemProxy = '';
+  if (process.platform === 'win32') {
+    try {
+      const { execFileSync } = requireFromHere('node:child_process');
+      const out = execFileSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'], { encoding: 'utf8', timeout: 5000 });
+      if (/ProxyEnable\s+REG_DWORD\s+0x1/i.test(out)) {
+        const m = /ProxyServer\s+REG_SZ\s+([^\r\n]+)/i.exec(out);
+        if (m) {
+          const raw = m[1].trim();
+          const hostPort = (/https=([^;]+)/i.exec(raw)?.[1] || /http=([^;]+)/i.exec(raw)?.[1] || raw).trim();
+          cachedSystemProxy = /^https?:\/\//i.test(hostPort) ? hostPort : `http://${hostPort}`;
+        }
+      }
+    } catch { /* 读不到就直连 */ }
+  }
+  return cachedSystemProxy;
+}
+
+/** 子进程环境：补上代理变量（Codex CLI 等不读系统代理）。 */
+function childEnvWithProxy() {
+  const proxy = systemProxyUrl();
+  const env = { ...ENV };
+  if (proxy) {
+    env.HTTPS_PROXY = env.HTTPS_PROXY || proxy;
+    env.HTTP_PROXY = env.HTTP_PROXY || proxy;
+  }
+  return env;
 }
 
 /* ---------- ChatGPT 网页账号通道（chatgpt-web@<accountId>，浏览器驱动） ---------- */
@@ -759,8 +794,10 @@ async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) 
         return last ? (last.currentSrc || last.src) : null;
       });
       if (src && /estuary\/content|blob:|data:image/.test(src)) break;
-      const tail = await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(-200));
-      if (/无法生成图片|生成图片时出错|reached the limit|超出.*上限/.test(tail)) throw new Error(`网页出图被拒绝: ${tail}`);
+      const tail = await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(-240));
+      if (/无法生成图片|生成图片时出错|达到上限|已达上限|图片生成上限|reached the limit|limit reached|out of (?:image )?(?:quota|credits)|升级到 ?Plus|too many/i.test(tail)) {
+        throw new Error(`网页出图额度用尽: ${tail}`);
+      }
     }
     if (!src) throw new Error('等待网页出图超时（5 分钟未返回图片）');
 
@@ -827,11 +864,25 @@ async function generateOnce(task, providers, retries) {
         return { ok: true, provider: p.id, model: resp?._model || p.model, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
       } catch (e) {
         errors.push({ provider: p.id, attempt: attempt + 1, error: e.message });
+        // 额度用尽：重试也没用，立即切下一个通道（免费版不设本地上限，用到服务端拒绝为止）
+        if (isQuotaError(e.message)) {
+          console.error(`[generate_image] ${p.id} 额度用尽，自动切换下一通道: ${e.message.split("\n")[0]}`);
+          break;
+        }
         if (attempt < retries) console.error(`[generate_image] ${p.id} 第 ${attempt + 1} 次失败，重试: ${e.message.split("\n")[0]}`);
       }
     }
   }
   return { ok: false, errors };
+}
+
+/**
+ * 判断错误是否为「额度用尽」——这类错误重试无意义，应直接切换下一通道。
+ * @param {string} message - 错误文本。
+ * @returns {boolean} 是否为额度类错误。
+ */
+function isQuotaError(message) {
+  return /额度|上限|用尽|耗尽|达到限制|reached the limit|limit reached|out of (?:image )?(?:quota|credits)|quota|insufficient|arrear|payment required|402/i.test(String(message || ""));
 }
 
 /* ---------- main ---------- */
