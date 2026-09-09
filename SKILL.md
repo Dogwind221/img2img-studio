@@ -50,7 +50,7 @@ scripts/generate_image.mjs（多供应商自动降级）
 ## 主流程
 
 1. **解析输入**：图片来自 Web 附件（`attachmentId` 形如 `sha256:<hex>`）→ 先用 `resolve_attachment.mjs` 解析出磁盘路径；或用户直接给路径/URL。
-2. **L1 识图（必做，禁止跳过）**：调用 dsh-vision-skill 的 vision.js 拿到结构化描述（见下）。纯文本模型不能「看到」图片，必须走脚本。
+2. **L1 识图（必做，禁止跳过）**：先判定模型是否原生看图——**多模态模型**（`read_image` 可用）直接用它读图；**纯文本模型**走 dsh-vision-skill 的 `vision.js`（见下）。两种情况都必须拿到结构化描述，不能凭空编造图片内容。
 3. **模式确认**：Step 0 已确定通道与风格；此处读取对应 `references/<mode>.md`（photo-art 含 zine 子风格 / ecommerce / chatgpt-web）。
 4. **构建 Prompt**：按模式文档的模板 + 识图描述注入。**任何 Prompt 都必须独立可生成**（即使图生图失败回退 t2i 也能用）——把主体描述完整写进文字。
 5. **生成**：通道为 chatgpt-web 时走浏览器出图（chatgpt-web-mode.md）；否则调 `scripts/generate_image.mjs --provider <通道>`（用法见下），参考图传原图；供应商自动探测降级。
@@ -58,6 +58,18 @@ scripts/generate_image.mjs（多供应商自动降级）
 7. **交付**：给生成文件路径 + **通道/风格/尺寸/模型** + 关键假设；附最终 Prompt 便于用户复现。
 
 ## L1 识图
+
+**第一步：判定走哪条路（DSH 0.1.3+，禁止无脑调脚本）**
+
+| 当前模型 | L1 做法 |
+|---|---|
+| **多模态**（`read_image` 可用，或模型配置 `inputModalities` 含 `image`） | 直接 `read_image` 读图并自己总结主体/构图/色彩/材质/情绪/文字——**不跑 `vision.js`**（省外部额度、免一次网络往返） |
+| **纯文本**（`read_image` 报 `does not declare image input` 等） | 走下方脚本识别链（多模型降级 + 备用供应商） |
+
+> 判定方法：调用一次 `read_image`；成功即多模态。也可先跑 `node "..\dsh-vision-skill\scripts\vision.js" guard` 看判定（无显式信号时返回 `null`，仍需按 `howToDecide` 探测）。
+> 需要**强结构化 JSON 契约**（`--schema img2img|ecom|ground`，带字段校验与损坏重试）时，即使模型是多模态也值得调一次脚本；只需粗略理解图片时不要调。
+
+**纯文本模型 / 需要结构化契约时**（附件先解析成磁盘路径）：
 
 ```powershell
 # 附件 → 磁盘路径（找不到时加 --search 按片段搜）
