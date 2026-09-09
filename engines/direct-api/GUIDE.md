@@ -1,17 +1,15 @@
 ---
-name: baoyu-image-gen
-description: AI image generation with OpenAI GPT Image 2, Azure OpenAI, Google, OpenRouter, DashScope, Z.AI GLM-Image, MiniMax, Jimeng, Seedream, Replicate and Agnes APIs. Supports text-to-image, reference images, aspect ratios, and batch generation from saved prompt files. Sequential by default; use batch parallel generation when the user already has multiple prompts or wants stable multi-image throughput. Use when user asks to generate, create, or draw images.
+name: direct-api
+description: 直连生图引擎（img2img-studio 自有通道）：OpenAI GPT Image 2 / Azure OpenAI / Google / OpenRouter / DashScope / Z.AI GLM-Image / MiniMax / Jimeng / Seedream / Replicate / Agnes 官方 API 直连，支持 t2i、参考图、画幅比例与批量出图。
 version: 2.1.0
 metadata:
-  openclaw:
-    homepage: https://github.com/JimLiu/baoyu-skills#baoyu-image-gen
-    requires:
-      anyBins:
-        - bun
-        - npx
+  requires:
+    anyBins:
+      - bun
+      - npx
 ---
 
-# Image Generation (AI SDK)
+# 直连生图引擎（direct-api）
 
 Official API-based image generation. Supports OpenAI GPT Image 2, Azure OpenAI, Google, OpenRouter, DashScope (阿里通义万象), Z.AI GLM-Image, MiniMax, Jimeng (即梦), Seedream (豆包), Replicate and Agnes.
 
@@ -37,14 +35,12 @@ Check these paths in order; first hit wins:
 
 | Path | Scope |
 |------|-------|
-| `.baoyu-skills/baoyu-image-gen/EXTEND.md` | Project |
-| `${XDG_CONFIG_HOME:-$HOME/.config}/baoyu-skills/baoyu-image-gen/EXTEND.md` | XDG |
-| `$HOME/.baoyu-skills/baoyu-image-gen/EXTEND.md` | User home |
+| `.img2img-studio/direct-api/EXTEND.md` | Project |
+| `${XDG_CONFIG_HOME:-$HOME/.config}/img2img-studio/direct-api/EXTEND.md` | XDG |
+| `$HOME/.img2img-studio/direct-api/EXTEND.md` | User home |
 
 - **Found** → load, parse, apply. If `default_model.[provider]` is null → ask model only.
 - **Not found** → run first-time setup (`references/config/first-time-setup.md`) using AskUserQuestion to collect provider + model + quality + save location. Save EXTEND.md, then continue. Do not generate images before this completes.
-
-Legacy compatibility: if `.baoyu-skills/baoyu-imagine/EXTEND.md` exists and the new path doesn't, the runtime renames it to `baoyu-image-gen`. If both exist, the runtime leaves them alone and uses the new path.
 
 **EXTEND.md keys**: default provider, default quality, default aspect ratio, default image size, OpenAI image API dialect, default models, batch worker cap, provider-specific batch limits. Schema: `references/config/preferences-schema.md`.
 
@@ -87,7 +83,7 @@ ${BUN_X} {baseDir}/scripts/main.ts --prompt "A cat" --image out.png --provider c
 # Batch mode
 ${BUN_X} {baseDir}/scripts/main.ts --batchfile batch.json --jobs 4
 
-# Build a batch file from outline.md + prompts/ (e.g. baoyu-article-illustrator output)
+# Build a batch file from outline.md + prompts/ (e.g. an outline-driven illustration workflow)
 ${BUN_X} {baseDir}/scripts/build-batch.ts --outline outline.md --prompts prompts --output batch.json --images-dir attachments
 ${BUN_X} {baseDir}/scripts/main.ts --batchfile batch.json --jobs 4
 ```
@@ -143,16 +139,16 @@ When the user wants a person/object preserved from reference images:
 | `JIMENG_REGION` | Jimeng region (default `cn-north-1`) |
 | `OPENAI_IMAGE_API_DIALECT` | `openai-native` \| `ratio-metadata` |
 | `OPENROUTER_HTTP_REFERER`, `OPENROUTER_TITLE` | Optional OpenRouter attribution |
-| `BAOYU_IMAGE_GEN_MAX_WORKERS` | Override batch worker cap |
-| `BAOYU_IMAGE_GEN_<PROVIDER>_CONCURRENCY` | Per-provider concurrency (e.g., `BAOYU_IMAGE_GEN_REPLICATE_CONCURRENCY`; for codex-cli use `BAOYU_IMAGE_GEN_CODEX_CLI_CONCURRENCY`) |
-| `BAOYU_IMAGE_GEN_<PROVIDER>_START_INTERVAL_MS` | Per-provider start-gap |
-| `BAOYU_CODEX_IMAGEGEN_BIN` | Override the codex-imagegen wrapper path for the `codex-cli` provider (default: bundled `scripts/codex-imagegen/main.ts`; accepts `.ts` or legacy `.sh`/binary) |
-| `BAOYU_CODEX_IMAGEGEN_CACHE_DIR` | Enable idempotency cache for the `codex-cli` provider (off by default) |
-| `BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS` | Per-attempt `codex exec` timeout for the `codex-cli` provider (default: 300000 ms) |
-| `BAOYU_CODEX_IMAGEGEN_RETRIES` | Wrapper-side retry attempts on retryable errors for the `codex-cli` provider (default: 2) |
-| `BAOYU_CODEX_IMAGEGEN_LOG_FILE` | Append JSONL diagnostic log for the `codex-cli` provider |
+| `IMG2IMG_DIRECT_MAX_WORKERS` | Override batch worker cap |
+| `IMG2IMG_DIRECT_<PROVIDER>_CONCURRENCY` | Per-provider concurrency (e.g., `IMG2IMG_DIRECT_REPLICATE_CONCURRENCY`; for codex-cli use `IMG2IMG_DIRECT_CODEX_CLI_CONCURRENCY`) |
+| `IMG2IMG_DIRECT_<PROVIDER>_START_INTERVAL_MS` | Per-provider start-gap |
+| `IMG2IMG_CODEX_BIN` | Override the codex-imagegen wrapper path for the `codex-cli` provider (default: bundled `scripts/codex-imagegen/main.ts`; accepts `.ts` or legacy `.sh`/binary) |
+| `IMG2IMG_CODEX_CACHE_DIR` | Enable idempotency cache for the `codex-cli` provider (off by default) |
+| `IMG2IMG_CODEX_TIMEOUT_MS` | Per-attempt `codex exec` timeout for the `codex-cli` provider (default: 300000 ms) |
+| `IMG2IMG_CODEX_RETRIES` | Wrapper-side retry attempts on retryable errors for the `codex-cli` provider (default: 2) |
+| `IMG2IMG_CODEX_LOG_FILE` | Append JSONL diagnostic log for the `codex-cli` provider |
 
-**Load priority**: CLI args > EXTEND.md > env vars > `<cwd>/.baoyu-skills/.env` > `~/.baoyu-skills/.env`
+**Load priority**: CLI args > EXTEND.md > env vars > `<cwd>/.img2img-studio/.env` > `~/.img2img-studio/.env`
 
 ### Codex/ChatGPT OAuth is not an OpenAI API key
 
@@ -161,7 +157,7 @@ When the user wants a person/object preserved from reference images:
 If the user wants to use their Codex subscription / GPT Image 2 entitlement without an OpenAI API key, route through a Codex-native backend instead of this skill's `openai` provider:
 
 - In Codex runtime: use the native `imagegen` skill/tool.
-- In non-Codex runtimes with `codex` CLI installed and logged in: use `baoyu-image-gen --provider codex-cli` (preferred — it gives you the same retry / cache / batch flow as every other provider). The provider spawns the bundled `scripts/codex-imagegen/main.ts`; the same code lives upstream at `packages/baoyu-codex-imagegen/src/main.ts` for standalone callers.
+- In non-Codex runtimes with `codex` CLI installed and logged in: use `direct-api --provider codex-cli` (preferred — it gives you the same retry / cache / batch flow as every other provider). The provider spawns the bundled `scripts/codex-imagegen/main.ts`; the same code lives upstream at `packages/img2img-codex/src/main.ts` for standalone callers.
 - In Hermes runtimes with a native `image_generate` tool: use that tool as a fallback, and state whether reference images were passed directly or reconstructed from extracted traits.
 
 Do not modify the existing `openai` provider to silently consume Codex OAuth. The first-class Codex-CLI path is the dedicated `codex-cli` provider, which has its own auth (Codex login), route (`codex exec`), request shape, and tests. See `references/codex-oauth-vs-openai-api-key.md`.
@@ -247,7 +243,7 @@ Supported: `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `2.35:1`.
 | One image, or 1-2 simple images | Sequential | Lower coordination overhead, easier debugging |
 | Multiple images with saved prompt files | Batch (`--batchfile`) | Reuses finalized prompts, applies shared throttling/retries, predictable throughput |
 | Each image still needs its own reasoning / prompt writing / style exploration | Subagents | Work is still exploratory, each needs independent analysis |
-| Input is `outline.md` + `prompts/` (e.g. from `baoyu-article-illustrator`) | Batch — use `{baseDir}/scripts/build-batch.ts` to assemble the payload | The outline + prompt files already contain everything needed |
+| Input is `outline.md` + `prompts/` (e.g. from an outline-driven illustration workflow) | Batch — use `{baseDir}/scripts/build-batch.ts` to assemble the payload | The outline + prompt files already contain everything needed |
 
 Rule of thumb: once prompt files are saved and the task is "generate all of these", prefer batch over subagents. Use subagents only when generation is coupled with per-image thinking or divergent creative exploration.
 
@@ -275,7 +271,7 @@ If `--provider openai --model gpt-image-2` fails because `OPENAI_API_KEY` is mis
 | File | Content |
 |------|---------|
 | `references/usage-examples.md` | Extended CLI examples across providers and batch mode |
-| `references/codex-oauth-vs-openai-api-key.md` | Why Codex/ChatGPT OAuth image2 entitlement is not usable through baoyu-image-gen's standard OpenAI API-key provider |
+| `references/codex-oauth-vs-openai-api-key.md` | Why Codex/ChatGPT OAuth image2 entitlement is not usable through direct-api's standard OpenAI API-key provider |
 | `references/codex-image2-fallback.md` | Practical fallback behavior when OpenAI API credentials are absent but Codex/native image generation is available |
 | `references/providers/dashscope.md` | DashScope families, sizes, limits |
 | `references/providers/zai.md` | Z.AI GLM-image / cogview-4 |

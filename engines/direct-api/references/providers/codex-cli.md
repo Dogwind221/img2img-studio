@@ -1,6 +1,6 @@
 # Codex CLI (`--provider codex-cli`)
 
-Read when the user picks `--provider codex-cli`, sets `default_provider: codex-cli`, or asks for "Codex image generation without an OpenAI API key". This provider is a thin baoyu-image-gen wrapper around the bundled `scripts/codex-imagegen/main.ts` (synced from `packages/baoyu-codex-imagegen`), which spawns `codex exec --json --sandbox danger-full-access` and routes the request to Codex CLI's built-in `image_gen` tool. The Codex CLI uses the **user's Codex / ChatGPT subscription** — no `OPENAI_API_KEY` is read or sent.
+Read when the user picks `--provider codex-cli`, sets `default_provider: codex-cli`, or asks for "Codex image generation without an OpenAI API key". This provider is a thin direct-api wrapper around the bundled `scripts/codex-imagegen/main.ts` (synced from `packages/img2img-codex`), which spawns `codex exec --json --sandbox danger-full-access` and routes the request to Codex CLI's built-in `image_gen` tool. The Codex CLI uses the **user's Codex / ChatGPT subscription** — no `OPENAI_API_KEY` is read or sent.
 
 ## Prerequisites
 
@@ -37,13 +37,13 @@ codex --version        # confirm >= 0.130
 
 | Variable | Effect |
 |----------|--------|
-| `BAOYU_CODEX_IMAGEGEN_BIN` | Override the wrapper path. Default: bundled `scripts/codex-imagegen/main.ts` resolved relative to this skill's installed location. Accepts a `.ts` file (spawned with `bun`) or a legacy `.sh`/binary (spawned directly). |
-| `BAOYU_CODEX_IMAGEGEN_CACHE_DIR` | Enable the wrapper's idempotency cache. Disabled by default; set to e.g. `~/.cache/baoyu-codex-imagegen` for high-value reuse. |
-| `BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS` | Per-attempt `codex exec` timeout in ms. Default: `300000` (5 min). Raise for slow networks or large prompts. |
-| `BAOYU_CODEX_IMAGEGEN_RETRIES` | Wrapper-side retry attempts on retryable errors. Default: `2` (3 total attempts). |
-| `BAOYU_CODEX_IMAGEGEN_LOG_FILE` | Append a structured JSONL diagnostic log. Useful when triaging timeouts or `agent_refused` errors. |
-| `BAOYU_IMAGE_GEN_CODEX_CLI_CONCURRENCY` | Batch-mode concurrency for the `codex-cli` provider. Default: `1` — Codex exec is a heavy single-process workflow; raising this rarely helps. |
-| `BAOYU_IMAGE_GEN_CODEX_CLI_START_INTERVAL_MS` | Batch-mode minimum start-gap. Default: `2000` ms. |
+| `IMG2IMG_CODEX_BIN` | Override the wrapper path. Default: bundled `scripts/codex-imagegen/main.ts` resolved relative to this skill's installed location. Accepts a `.ts` file (spawned with `bun`) or a legacy `.sh`/binary (spawned directly). |
+| `IMG2IMG_CODEX_CACHE_DIR` | Enable the wrapper's idempotency cache. Disabled by default; set to e.g. `~/.cache/img2img-codex` for high-value reuse. |
+| `IMG2IMG_CODEX_TIMEOUT_MS` | Per-attempt `codex exec` timeout in ms. Default: `300000` (5 min). Raise for slow networks or large prompts. |
+| `IMG2IMG_CODEX_RETRIES` | Wrapper-side retry attempts on retryable errors. Default: `2` (3 total attempts). |
+| `IMG2IMG_CODEX_LOG_FILE` | Append a structured JSONL diagnostic log. Useful when triaging timeouts or `agent_refused` errors. |
+| `IMG2IMG_DIRECT_CODEX_CLI_CONCURRENCY` | Batch-mode concurrency for the `codex-cli` provider. Default: `1` — Codex exec is a heavy single-process workflow; raising this rarely helps. |
+| `IMG2IMG_DIRECT_CODEX_CLI_START_INTERVAL_MS` | Batch-mode minimum start-gap. Default: `2000` ms. |
 
 ## Error model
 
@@ -53,7 +53,7 @@ The wrapper emits a single JSON line on stdout. On failure:
 {"status":"error","path":"...","bytes":0,"error":"...","error_kind":"..."}
 ```
 
-The provider re-throws each wrapper error as `Invalid codex-cli result (<error_kind>): <message>`. The `"Invalid "` prefix triggers `isRetryableGenerationError` to mark it **non-retryable** in baoyu-image-gen's outer retry loop — the wrapper has already retried internally per `BAOYU_CODEX_IMAGEGEN_RETRIES`, so re-spawning Codex from main.ts would only multiply latency without changing the outcome.
+The provider re-throws each wrapper error as `Invalid codex-cli result (<error_kind>): <message>`. The `"Invalid "` prefix triggers `isRetryableGenerationError` to mark it **non-retryable** in direct-api's outer retry loop — the wrapper has already retried internally per `IMG2IMG_CODEX_RETRIES`, so re-spawning Codex from main.ts would only multiply latency without changing the outcome.
 
 `error_kind` values to expect:
 
@@ -63,7 +63,7 @@ The provider re-throws each wrapper error as `Invalid codex-cli result (<error_k
 | `invalid_args` | Programmer error in the spawn invocation | Inspect provider source; usually a path-injection guard fired. |
 | `prompt_file_missing` | Temp prompt file vanished mid-call | Retry once; check `$TMPDIR` permissions. |
 | `spawn_failed` | OS / process-launch failure | Verify `bun` or `npx` is installed; check filesystem permissions. |
-| `timeout` | `codex exec` exceeded `--timeout` | Raise `BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS`; check network. |
+| `timeout` | `codex exec` exceeded `--timeout` | Raise `IMG2IMG_CODEX_TIMEOUT_MS`; check network. |
 | `no_image_gen_tool_use` | Codex agent answered without calling `image_gen` | Often transient — retry. If persistent, refine the prompt. |
 | `output_missing` / `invalid_png` | Agent reported success but file is absent or not a valid PNG | Retry; check disk space. |
 | `agent_refused` | Codex agent refused (policy or content) | Adjust the prompt; surface the refusal to the user. |
@@ -72,7 +72,7 @@ The provider re-throws each wrapper error as `Invalid codex-cli result (<error_k
 ## Trade-offs
 
 - Slow: 5–10× direct OpenAI API latency (except cache hits).
-- Subject to the same TOS as interactive `codex exec` use — programmatic invocation from baoyu-image-gen is the same usage class.
+- Subject to the same TOS as interactive `codex exec` use — programmatic invocation from direct-api is the same usage class.
 - Stateful: requires `codex login` to be live; an expired session manifests as `codex_not_installed` or `agent_refused`.
 
 ## See also

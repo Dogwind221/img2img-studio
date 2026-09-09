@@ -30,7 +30,7 @@ The Agnes API returns a single image per request regardless of the `n` parameter
 - Model override: `AGNES_IMAGE_MODEL` env
 - `response_format` is always embedded in `extra_body` (not at request top level)
 - Reference images: local files converted to Data URI base64 inline; remote URLs passed through
-- Rate limit defaults: concurrency=3, startIntervalMs=1100 (override via `BAOYU_IMAGE_GEN_AGNES_CONCURRENCY` / `BAOYU_IMAGE_GEN_AGNES_START_INTERVAL_MS`)
+- Rate limit defaults: concurrency=3, startIntervalMs=1100 (override via `IMG2IMG_DIRECT_AGNES_CONCURRENCY` / `IMG2IMG_DIRECT_AGNES_START_INTERVAL_MS`)
 - Timeout: 120s per request
 
 ## Size Resolution

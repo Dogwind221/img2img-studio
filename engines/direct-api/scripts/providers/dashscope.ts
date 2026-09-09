@@ -576,7 +576,7 @@ export async function generateImage(
 
   if (spec.family === "wan27" && args.n !== 1) {
     throw new Error(
-      "DashScope wan2.7 image models in baoyu-image-gen support exactly one output image per request (extra images would be billed but discarded). Remove --n or use --n 1."
+      "DashScope wan2.7 image models in direct-api support exactly one output image per request (extra images would be billed but discarded). Remove --n or use --n 1."
     );
   }
 

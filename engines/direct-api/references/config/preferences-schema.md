@@ -1,6 +1,6 @@
 ---
 name: preferences-schema
-description: EXTEND.md YAML schema for baoyu-image-gen user preferences
+description: EXTEND.md YAML schema for direct-api user preferences
 ---
 
 # Preferences Schema

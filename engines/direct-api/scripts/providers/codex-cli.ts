@@ -61,11 +61,11 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 async function resolveWrapperPath(): Promise<string> {
-  const override = process.env.BAOYU_CODEX_IMAGEGEN_BIN;
+  const override = process.env.IMG2IMG_CODEX_BIN;
   if (override) {
     if (!(await exists(override))) {
       throw new Error(
-        `Invalid BAOYU_CODEX_IMAGEGEN_BIN: ${override} does not exist.`,
+        `Invalid IMG2IMG_CODEX_BIN: ${override} does not exist.`,
       );
     }
     return override;
@@ -73,7 +73,7 @@ async function resolveWrapperPath(): Promise<string> {
   if (await exists(BUNDLED_WRAPPER)) return BUNDLED_WRAPPER;
   throw new Error(
     `codex-cli wrapper not found at ${BUNDLED_WRAPPER}. ` +
-      `Reinstall baoyu-image-gen, or set BAOYU_CODEX_IMAGEGEN_BIN to a codex-imagegen main.ts (or .sh) path.`,
+      `Reinstall direct-api, or set IMG2IMG_CODEX_BIN to a codex-imagegen main.ts (or .sh) path.`,
   );
 }
 
@@ -137,7 +137,7 @@ export async function generateImage(
 ): Promise<Uint8Array> {
   const wrapperPath = await resolveWrapperPath();
 
-  const sessionDir = path.join(tmpdir(), "baoyu-image-gen-codex-cli");
+  const sessionDir = path.join(tmpdir(), "direct-api-codex-cli");
   await mkdir(sessionDir, { recursive: true });
   const token = randomBytes(8).toString("hex");
   const tmpOutput = path.join(sessionDir, `out-${token}.png`);
@@ -158,16 +158,16 @@ export async function generateImage(
     cliArgs.push("--ref", path.resolve(ref));
   }
 
-  const cacheDir = getEnvOverride("BAOYU_CODEX_IMAGEGEN_CACHE_DIR");
+  const cacheDir = getEnvOverride("IMG2IMG_CODEX_CACHE_DIR");
   if (cacheDir) cliArgs.push("--cache-dir", cacheDir);
 
-  const timeoutMs = parsePositiveInt(process.env.BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS);
+  const timeoutMs = parsePositiveInt(process.env.IMG2IMG_CODEX_TIMEOUT_MS);
   if (timeoutMs) cliArgs.push("--timeout", String(timeoutMs));
 
-  const retries = parsePositiveInt(process.env.BAOYU_CODEX_IMAGEGEN_RETRIES);
+  const retries = parsePositiveInt(process.env.IMG2IMG_CODEX_RETRIES);
   if (retries !== null) cliArgs.push("--retries", String(retries));
 
-  const logFile = getEnvOverride("BAOYU_CODEX_IMAGEGEN_LOG_FILE");
+  const logFile = getEnvOverride("IMG2IMG_CODEX_LOG_FILE");
   if (logFile) cliArgs.push("--log-file", logFile);
 
   try {

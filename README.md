@@ -100,5 +100,5 @@ MIT
 
 ## 致谢与风格来源
 
-- 风格融合自多个开源 Skill：`photo-abstract-editorial`、`photo-revival`、`ecommerce-image-suite`、`ecom-details-image`、`1click-ecom-detailpage`、`gpt-image2-ecommerce`、`designkit-skills`（美图）、`gathered-scenes-zine`（Zeejay0，**个人非商业许可**，商用需其授权）、`gc-minimal-zine-poster`、baoyu-image-gen（模型/供应商设计参考）
-- 生图供应商设计参考 [JimLiu/baoyu-skills](https://github.com/JimLiu/baoyu-skills) 的 baoyu-image-gen
+- 风格融合自多个开源 Skill：`photo-abstract-editorial`、`photo-revival`、`ecommerce-image-suite`、`ecom-details-image`、`1click-ecom-detailpage`、`gpt-image2-ecommerce`、`designkit-skills`（美图）、`gathered-scenes-zine`（Zeejay0，**个人非商业许可**，商用需其授权）、`gc-minimal-zine-poster`
+- `engines/direct-api/` 为 MIT 授权的第三方代码（见该目录 `LICENSE`），已重命名为本技能自有通道并完成 DSH 本地化改造

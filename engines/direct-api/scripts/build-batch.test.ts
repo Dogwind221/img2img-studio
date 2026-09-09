@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -8,7 +9,21 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-const scriptPath = path.join(repoRoot, "skills", "baoyu-image-gen", "scripts", "build-batch.ts");
+const scriptPath = path.join(repoRoot, "engines", "direct-api", "scripts", "build-batch.ts");
+
+/**
+ * Resolve the bun executable for the subprocess.
+ * Windows installs bun as a `.ps1`/`.cmd` shim, which `execFile` cannot spawn,
+ * so prefer the real binary inside the npm global directory.
+ */
+function resolveBunBinary(): string {
+  if (process.env.BUN_BINARY) return process.env.BUN_BINARY;
+  if (process.platform === "win32") {
+    const npmBun = path.join(process.env.APPDATA ?? "", "npm", "node_modules", "bun", "bin", "bun.exe");
+    if (existsSync(npmBun)) return npmBun;
+  }
+  return "bun";
+}
 
 async function makeFixture(): Promise<{
   root: string;
@@ -16,7 +31,7 @@ async function makeFixture(): Promise<{
   promptsDir: string;
   outputPath: string;
 }> {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "baoyu-image-gen-build-batch-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "direct-api-build-batch-"));
   const outlinePath = path.join(root, "outline.md");
   const promptsDir = path.join(root, "prompts");
   const outputPath = path.join(root, "batch.json");
@@ -37,12 +52,15 @@ async function makeFixture(): Promise<{
 }
 
 async function runBuildBatch(args: string[]): Promise<void> {
-  await execFileAsync(process.execPath, ["--import", "tsx", scriptPath, ...args], {
+  // The engine requires bun at runtime (GUIDE.md), and bun executes TypeScript
+  // directly, so the subprocess uses bun instead of node + a tsx loader that
+  // this vendored copy does not ship.
+  await execFileAsync(resolveBunBinary(), [scriptPath, ...args], {
     cwd: repoRoot,
   });
 }
 
-test("build-batch omits default model so baoyu-image-gen can resolve env or EXTEND defaults", async () => {
+test("build-batch omits default model so direct-api can resolve env or EXTEND defaults", async () => {
   const fixture = await makeFixture();
 
   await runBuildBatch([

@@ -230,7 +230,7 @@ async function generate(opts: CliOptions, log: JsonLogger): Promise<GenerateResu
   }
 
   // lock to prevent concurrent codex exec
-  const lockDir = opts.cacheDir ?? path.join(homedir(), ".cache", "baoyu-codex-imagegen");
+  const lockDir = opts.cacheDir ?? path.join(homedir(), ".cache", "img2img-codex");
   const lock = new FileLock(path.join(lockDir, "codex-exec.lock"));
   try {
     await lock.acquire(60_000);

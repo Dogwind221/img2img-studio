@@ -37,8 +37,8 @@ Options:
   --output <path>      Path to output batch.json
   --images-dir <path>  Directory for generated images
   --refs-dir <path>    Directory holding reference images, relative to batch file (default: references)
-  --provider <name>    Provider for baoyu-image-gen batch tasks (default: replicate)
-  --model <id>         Explicit model for baoyu-image-gen batch tasks (default: resolved by baoyu-image-gen config/env)
+  --provider <name>    Provider for direct-api batch tasks (default: replicate)
+  --model <id>         Explicit model for direct-api batch tasks (default: resolved by direct-api config/env)
   --ar <ratio>         Aspect ratio for all tasks (default: 16:9)
   --quality <level>    Quality for all tasks (default: 2k)
   --jobs <count>       Recommended worker count metadata (optional)

@@ -372,7 +372,7 @@ export function validateArgs(model: string, args: CliArgs): void {
   }
 
   if (args.imageSize && args.imageSizeSource !== "config") {
-    throw new Error("Replicate models in baoyu-image-gen do not use --imageSize. Use --quality, --ar, or --size instead.");
+    throw new Error("Replicate models in direct-api do not use --imageSize. Use --quality, --ar, or --size instead.");
   }
 
   const family = getModelFamily(model);
@@ -431,7 +431,7 @@ export function validateArgs(model: string, args: CliArgs): void {
 
   if (args.referenceImages.length > 0 || hasExplicitAspectRatio || args.size) {
     throw new Error(
-      `Replicate model ${model} is not in the baoyu-image-gen compatibility list. Supported families: google/nano-banana*, bytedance/seedream-4.5, bytedance/seedream-5-lite, wan-video/wan-2.7-image, wan-video/wan-2.7-image-pro.`
+      `Replicate model ${model} is not in the direct-api compatibility list. Supported families: google/nano-banana*, bytedance/seedream-4.5, bytedance/seedream-5-lite, wan-video/wan-2.7-image, wan-video/wan-2.7-image-pro.`
     );
   }
 }
@@ -557,7 +557,7 @@ export function extractOutputUrl(prediction: PredictionResponse): string {
   if (Array.isArray(output)) {
     if (output.length !== 1) {
       throw new Error(
-        `Replicate returned ${output.length} outputs, but baoyu-image-gen currently supports saving exactly one image per request.`
+        `Replicate returned ${output.length} outputs, but direct-api currently supports saving exactly one image per request.`
       );
     }
     const first = output[0];

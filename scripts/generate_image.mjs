@@ -78,7 +78,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ---------- CLI ---------- */
 function parseArgs() {
   const argv = process.argv.slice(2);
-  const a = { prompt: "", promptFiles: [], images: [], size: "", quality: "2k", n: 1, provider: "auto", model: "", negativePrompt: "", dialect: "", batchfile: "", jobs: 4, retries: 2, outputDir: "", dryRun: false, listProviders: false, json: false };
+  const a = { prompt: "", promptFiles: [], images: [], size: "", quality: "2k", n: 1, provider: "auto", model: "", directProvider: "", negativePrompt: "", dialect: "", batchfile: "", jobs: 4, retries: 2, outputDir: "", dryRun: false, listProviders: false, json: false };
   const next = (i) => (i + 1 < argv.length ? argv[++i] : "");
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -91,6 +91,7 @@ function parseArgs() {
       case "--quality": a.quality = (next(i) || "2k").toLowerCase(); break;
       case "--n": case "--count": a.n = parseInt(next(i), 10) || 1; break;
       case "--provider": a.provider = next(i).toLowerCase(); break;
+      case "--direct-provider": a.directProvider = next(i).toLowerCase(); break;
       case "--model": case "-m": a.model = next(i); break;
       case "--negative-prompt": a.negativePrompt = next(i); break;
       case "--dialect": a.dialect = next(i).toLowerCase(); break;
@@ -246,6 +247,23 @@ function detectProviders() {
     id: "qoder", name: "Qoder CLI（ImageGen 工具）", configured: qoderFound,
     base: "qoderclicn", model: ENV.QODER_IMAGE_MODEL || "Qwen3.8-Max（ImageGen）", key: "", keyMasked: "-",
     detail: qoderFound ? "已检测到 qoderclicn；需已登录（qoderclicn login，2026-08-17 已实测可用）" : "需要 npm i -g @qodercn-ai/qoderclicn 并 qoderclicn login",
+  });
+
+  // 直连引擎通道：本仓库自带的 engines/direct-api（12 家官方 API），需 bun
+  const bunFound = (() => {
+    const resolved = resolveBunBinary();
+    if (resolved !== "bun") return fs.existsSync(resolved);
+    const names = process.platform === "win32" ? ["bun.exe", "bun.cmd"] : ["bun"];
+    return (ENV.PATH || "").split(path.delimiter).some((dir) => names.some((n) => dir && fs.existsSync(path.join(dir, n))));
+  })();
+  const engineFound = fs.existsSync(DIRECT_ENGINE);
+  list.push({
+    id: "direct", name: "直连引擎（12 家官方 API）", configured: bunFound && engineFound,
+    base: "engines/direct-api", model: ENV.DIRECT_PROVIDER || "dashscope（子通道，可用 --direct-provider 指定）",
+    key: "", keyMasked: "-",
+    detail: !engineFound ? "缺少 engines/direct-api（仓库未完整检出）"
+      : !bunFound ? "需要 bun（https://bun.sh）；引擎以 bun 运行 TypeScript"
+      : `已就绪；子通道: ${DIRECT_PROVIDERS.join(", ")}（当前默认 ${ENV.DIRECT_PROVIDER || "dashscope"}）`,
   });
   return list;
 }
@@ -556,8 +574,69 @@ async function saveImages(resp, outDir, prefix) {
   }
   if (resp?._codexFile) items.push(resp._codexFile);
   if (resp?._qoderFile) items.push(resp._qoderFile);
+  if (resp?._directFile) items.push(resp._directFile);
   if (!items.length && data.length) throw new Error("无法从响应中解析图片数据");
   return items;
+}
+
+/* ---------- 直连引擎通道（engines/direct-api：12 家官方 API） ---------- */
+const DIRECT_ENGINE = path.join(__dirname, "..", "engines", "direct-api", "scripts", "main.ts");
+const DIRECT_PROVIDERS = ["openai", "azure", "google", "openrouter", "dashscope", "zai", "minimax", "jimeng", "seedream", "replicate", "agnes", "codex-cli"];
+
+/** bun 可执行文件：Windows 上 npm 只装 .ps1/.cmd shim，execFile 无法直接 spawn。 */
+function resolveBunBinary() {
+  if (ENV.BUN_BINARY) return ENV.BUN_BINARY;
+  if (process.platform === "win32") {
+    const p = path.join(os.homedir(), "AppData", "Roaming", "npm", "node_modules", "bun", "bin", "bun.exe");
+    if (fs.existsSync(p)) return p;
+  }
+  return "bun";
+}
+
+/** 像素尺寸 → 引擎的 --ar 比例（先在比例表里精确匹配，否则按宽高比取最近项）。 */
+function pxToAspect(sizePx) {
+  const m = /^(\d+)x(\d+)$/.exec(String(sizePx));
+  if (!m) return "1:1";
+  const w = Number(m[1]), h = Number(m[2]);
+  for (const [ratio, sizes] of Object.entries(RATIO_SIZE)) {
+    if (sizes.includes(`${w}x${h}`)) return ratio;
+  }
+  const target = w / h;
+  let best = "1:1", bestDiff = Infinity;
+  for (const ratio of Object.keys(RATIO_SIZE)) {
+    const [rw, rh] = ratio.split(":").map(Number);
+    const diff = Math.abs(rw / rh - target);
+    if (diff < bestDiff) { bestDiff = diff; best = ratio; }
+  }
+  return best;
+}
+
+async function directEngineGenerate({ prompt, refs, size, n, outputDir, model, directProvider }) {
+  if (!fs.existsSync(DIRECT_ENGINE)) throw new Error(`直连引擎缺失: ${DIRECT_ENGINE}（git 仓库应包含 engines/direct-api/）`);
+  const sub = (directProvider || ENV.DIRECT_PROVIDER || "dashscope").toLowerCase();
+  if (!DIRECT_PROVIDERS.includes(sub)) throw new Error(`未知直连子通道 ${sub}；可用: ${DIRECT_PROVIDERS.join(", ")}`);
+  const out = path.join(outputDir, `direct-${sub}-${Date.now()}.png`);
+  fs.mkdirSync(outputDir, { recursive: true });
+  const args = [DIRECT_ENGINE, "--prompt", prompt, "--provider", sub, "--image", out, "--ar", pxToAspect(size), "--quality", "2k", "--json"];
+  if (model) args.push("--model", model);
+  if (refs.length) args.push("--ref", ...refs.map((f) => path.resolve(f)));
+  const { execFile } = await import("node:child_process");
+  const childEnv = { ...ENV };
+  // 与本脚本的别名保持一致：DashScope key 常以 VISION_API_KEY 形式存在，OpenAI 兼容通道用 IMG_*
+  if (!childEnv.DASHSCOPE_API_KEY && childEnv.VISION_API_KEY) childEnv.DASHSCOPE_API_KEY = childEnv.VISION_API_KEY;
+  if (!childEnv.OPENAI_API_KEY && childEnv.IMG_API_KEY) childEnv.OPENAI_API_KEY = childEnv.IMG_API_KEY;
+  if (!childEnv.OPENAI_BASE_URL && childEnv.IMG_BASE_URL) childEnv.OPENAI_BASE_URL = childEnv.IMG_BASE_URL;
+  if (!childEnv.OPENAI_IMAGE_MODEL && childEnv.IMG_MODEL) childEnv.OPENAI_IMAGE_MODEL = childEnv.IMG_MODEL;
+  const stdout = await new Promise((resolve, reject) => {
+    execFile(resolveBunBinary(), args, { timeout: 600000, maxBuffer: 64 * 1024 * 1024, env: childEnv }, (err, out_, errout) => {
+      if (err) return reject(new Error(`直连引擎 ${sub} 失败: ${String(errout || err.message).split("\n").slice(0, 3).join(" | ")}`));
+      resolve(String(out_));
+    });
+  });
+  if (!fs.existsSync(out)) {
+    throw new Error(`直连引擎 ${sub} 未产出图片（输出: ${stdout.slice(0, 300)}）`);
+  }
+  return { _directFile: out };
 }
 
 /* ---------- 单次生成（含重试） ---------- */
@@ -592,6 +671,7 @@ async function generateOnce(task, providers, retries) {
         else if (p.id === "local") resp = await localGenerate({ ...args, base: p.base });
         else if (p.id === "codex-cli") resp = await codexCliGenerate({ ...args });
         else if (p.id === "qoder") resp = await qoderCliGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images") });
+        else if (p.id === "direct") resp = await directEngineGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images"), model, directProvider: task.directProvider });
         else throw new Error(`未知供应商 ${p.id}`);
         return { ok: true, provider: p.id, model: resp?._model || p.model, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
       } catch (e) {
@@ -675,6 +755,7 @@ async function main() {
   const result = await generateOnce({
     prompt, images: a.images, size: a.size, quality: a.quality, n: a.n,
     providerId: a.provider, model: a.model, dialect: a.dialect, negativePrompt: a.negativePrompt,
+    directProvider: a.directProvider,
     outputDir: a.outputDir,
   }, providers, a.retries);
 

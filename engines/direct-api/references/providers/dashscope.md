@@ -26,7 +26,7 @@ Read when the user picks `--provider dashscope`, sets `default_model.dashscope`,
 - Supports up to 9 reference images in `--ref` (image editing / multi-image fusion)
 - Reference images are sent inline as base64 (or passed through if the path is an `http(s)://` URL)
 - API does NOT use `prompt_extend`; the skill omits it for this family
-- The Wan 2.7 API defaults `n` to **4** in non-collage mode and bills per generated image. baoyu-image-gen forces `n: 1` and rejects `--n > 1` to avoid silently paying for and discarding extra images.
+- The Wan 2.7 API defaults `n` to **4** in non-collage mode and bills per generated image. direct-api forces `n: 1` and rejects `--n > 1` to avoid silently paying for and discarding extra images.
 
 **Legacy** — `z-image-turbo`, `z-image-ultra`, `wanx-v1`. Only use when the user explicitly asks for legacy behavior.
 
@@ -36,7 +36,7 @@ Read when the user picks `--provider dashscope`, sets `default_model.dashscope`,
 - For `qwen-image-2.0*`: prefer explicit `--size`; otherwise infer from `--ar` using the recommended table below
 - For `qwen-image-max/plus/image`: only use the five fixed sizes; if the requested ratio doesn't fit, switch to `qwen-image-2.0-pro`
 - For `wan2.7-image*`: explicit `--size` is validated against the per-mode pixel/ratio limits; otherwise the size is derived from `--ar` and `--quality` (`normal` ≈ 1K, `2k` ≈ 2K). To request 4K with `wan2.7-image-pro` text-to-image, pass `--size` explicitly (e.g. `4096*4096`, `3840*2160`)
-- `--quality` is a baoyu-image-gen preset, not an official DashScope field. The mapping of `normal`/`2k` onto the `qwen-image-2.0*` and `wan2.7-image*` tables is an implementation choice, not an API guarantee
+- `--quality` is a direct-api preset, not an official DashScope field. The mapping of `normal`/`2k` onto the `qwen-image-2.0*` and `wan2.7-image*` tables is an implementation choice, not an API guarantee
 
 ### Recommended `qwen-image-2.0*` sizes
 
@@ -59,7 +59,7 @@ Read when the user picks `--provider dashscope`, sets `default_model.dashscope`,
 
 ## Not Exposed
 
-DashScope APIs also support `negative_prompt`, `prompt_extend`, `watermark`, `thinking_mode`, `seed`, `bbox_list`, `enable_sequential`, and `color_palette`. `baoyu-image-gen` does not expose them as CLI flags today; the wan2.7 family relies on the API defaults (e.g. `thinking_mode=true`). The skill always sends `n=1` for wan2.7 — if you want grid/collage mode you currently need to call the API directly.
+DashScope APIs also support `negative_prompt`, `prompt_extend`, `watermark`, `thinking_mode`, `seed`, `bbox_list`, `enable_sequential`, and `color_palette`. `direct-api` does not expose them as CLI flags today; the wan2.7 family relies on the API defaults (e.g. `thinking_mode=true`). The skill always sends `n=1` for wan2.7 — if you want grid/collage mode you currently need to call the API directly.
 
 ## Official References
 

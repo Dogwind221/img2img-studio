@@ -241,11 +241,11 @@ function getZaiQuality(quality: CliArgs["quality"]): "hd" | "standard" {
 
 export function validateArgs(_model: string, args: CliArgs): void {
   if (args.referenceImages.length > 0) {
-    throw new Error("Z.AI GLM-image currently supports text-to-image only in baoyu-image-gen. Remove --ref or choose another provider.");
+    throw new Error("Z.AI GLM-image currently supports text-to-image only in direct-api. Remove --ref or choose another provider.");
   }
 
   if (args.n > 1) {
-    throw new Error("Z.AI image generation currently returns a single image per request in baoyu-image-gen.");
+    throw new Error("Z.AI image generation currently returns a single image per request in direct-api.");
   }
 }
 

@@ -137,7 +137,7 @@ test("Azure image generation routes model to deployment and sends mapped quality
 });
 
 test("Azure image edits include quality in multipart requests", async (t) => {
-  const root = await makeTempDir("baoyu-image-gen-azure-");
+  const root = await makeTempDir("direct-api-azure-");
   t.after(() => fs.rm(root, { recursive: true, force: true }));
 
   const pngPath = path.join(root, "ref.png");

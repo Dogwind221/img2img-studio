@@ -76,7 +76,7 @@ async function makeTempDir(prefix: string): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), prefix));
 }
 
-test("parseArgs parses the main baoyu-image-gen CLI flags", () => {
+test("parseArgs parses the main direct-api CLI flags", () => {
   const args = parseArgs([
     "--promptfiles",
     "prompts/system.md",
@@ -222,16 +222,15 @@ test("ensureDir creates nested dirs, is idempotent on an existing dir, and rethr
   await assert.rejects(() => ensureDir(filePath));
 });
 
-test("loadExtendConfig renames legacy EXTEND.md when the new path is missing", async () => {
-  const root = await makeTempDir("baoyu-image-gen-extend-");
+test("loadExtendConfig reads the project EXTEND.md", async () => {
+  const root = await makeTempDir("direct-api-extend-");
   const cwd = path.join(root, "project");
   const home = path.join(root, "home");
-  const legacyPath = path.join(cwd, ".baoyu-skills", "baoyu-imagine", "EXTEND.md");
-  const currentPath = path.join(cwd, ".baoyu-skills", "baoyu-image-gen", "EXTEND.md");
+  const configPath = path.join(cwd, ".img2img-studio", "direct-api", "EXTEND.md");
 
-  await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+  await fs.mkdir(path.dirname(configPath), { recursive: true });
   await fs.mkdir(home, { recursive: true });
-  await fs.writeFile(legacyPath, `---
+  await fs.writeFile(configPath, `---
 default_provider: google
 default_quality: 2k
 ---
@@ -241,40 +240,6 @@ default_quality: 2k
 
   assert.equal(config.default_provider, "google");
   assert.equal(config.default_quality, "2k");
-  await fs.access(currentPath);
-  await assert.rejects(() => fs.access(legacyPath));
-});
-
-test("loadExtendConfig leaves legacy EXTEND.md untouched when both paths exist", async () => {
-  const root = await makeTempDir("baoyu-image-gen-extend-dual-");
-  const cwd = path.join(root, "project");
-  const home = path.join(root, "home");
-  const legacyPath = path.join(cwd, ".baoyu-skills", "baoyu-imagine", "EXTEND.md");
-  const currentPath = path.join(cwd, ".baoyu-skills", "baoyu-image-gen", "EXTEND.md");
-
-  await fs.mkdir(path.dirname(legacyPath), { recursive: true });
-  await fs.mkdir(path.dirname(currentPath), { recursive: true });
-  await fs.mkdir(home, { recursive: true });
-  await fs.writeFile(legacyPath, `---
-default_provider: google
----
-`);
-  await fs.writeFile(currentPath, `---
-default_provider: openai
----
-`);
-
-  const config = await loadExtendConfig(cwd, home);
-
-  assert.equal(config.default_provider, "openai");
-  assert.equal(await fs.readFile(legacyPath, "utf8"), `---
-default_provider: google
----
-`);
-  assert.equal(await fs.readFile(currentPath, "utf8"), `---
-default_provider: openai
----
-`);
 });
 
 test("mergeConfig only fills values missing from CLI args", () => {
@@ -506,10 +471,10 @@ test("detectProvider selects MiniMax when only MiniMax credentials are configure
 
 test("batch worker and provider-rate-limit configuration prefer env over EXTEND config", (t) => {
   useEnv(t, {
-    BAOYU_IMAGE_GEN_MAX_WORKERS: "12",
-    BAOYU_IMAGE_GEN_GOOGLE_CONCURRENCY: "5",
-    BAOYU_IMAGE_GEN_GOOGLE_START_INTERVAL_MS: "450",
-    BAOYU_IMAGE_GEN_ZAI_CONCURRENCY: "4",
+    IMG2IMG_DIRECT_MAX_WORKERS: "12",
+    IMG2IMG_DIRECT_GOOGLE_CONCURRENCY: "5",
+    IMG2IMG_DIRECT_GOOGLE_START_INTERVAL_MS: "450",
+    IMG2IMG_DIRECT_ZAI_CONCURRENCY: "4",
   });
 
   const extendConfig: Partial<ExtendConfig> = {
@@ -548,7 +513,7 @@ test("batch worker and provider-rate-limit configuration prefer env over EXTEND 
 });
 
 test("loadBatchTasks and createTaskArgs resolve batch-relative paths", async (t) => {
-  const root = await makeTempDir("baoyu-image-gen-batch-");
+  const root = await makeTempDir("direct-api-batch-");
   t.after(() => fs.rm(root, { recursive: true, force: true }));
 
   const batchFile = path.join(root, "jobs", "batch.json");
@@ -612,7 +577,7 @@ test("path normalization, worker count, and retry classification follow expected
   assert.equal(isRetryableGenerationError(new Error("API error (401): denied")), false);
   assert.equal(
     isRetryableGenerationError(
-      new Error("Replicate returned 2 outputs, but baoyu-image-gen currently supports saving exactly one image per request."),
+      new Error("Replicate returned 2 outputs, but direct-api currently supports saving exactly one image per request."),
     ),
     false,
   );
@@ -624,7 +589,7 @@ test("path normalization, worker count, and retry classification follow expected
   );
   assert.equal(
     isRetryableGenerationError(
-      new Error("DashScope wan2.7 image models in baoyu-image-gen support exactly one output image per request."),
+      new Error("DashScope wan2.7 image models in direct-api support exactly one output image per request."),
     ),
     false,
   );

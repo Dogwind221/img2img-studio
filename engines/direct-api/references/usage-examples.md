@@ -97,7 +97,7 @@ ${BUN_X} {baseDir}/scripts/main.ts --prompt "Apply this style" --image out.png -
 Notes on `codex-cli`:
 - Never auto-selected — pin via `--provider codex-cli` or `default_provider: codex-cli` in EXTEND.md.
 - Only `n=1` supported (Codex `image_gen` returns one image per call); `--size`, `--imageSize`, `--quality`, and `--imageApiDialect` are ignored or rejected.
-- Typically 5–10× slower than direct OpenAI / Google API calls (except on cache hits). Tune via `BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS`, `BAOYU_CODEX_IMAGEGEN_RETRIES`, and `BAOYU_CODEX_IMAGEGEN_CACHE_DIR`.
+- Typically 5–10× slower than direct OpenAI / Google API calls (except on cache hits). Tune via `IMG2IMG_CODEX_TIMEOUT_MS`, `IMG2IMG_CODEX_RETRIES`, and `IMG2IMG_CODEX_CACHE_DIR`.
 
 ## Batch Mode
 

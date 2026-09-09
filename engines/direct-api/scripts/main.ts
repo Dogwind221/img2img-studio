@@ -2,7 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { access, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import type {
   BatchFile,
   BatchTaskInput,
@@ -156,16 +156,16 @@ Environment variables:
   AZURE_API_VERSION         Azure API version (default: 2025-04-01-preview)
   AZURE_OPENAI_IMAGE_MODEL  Backward-compatible Azure deployment/model alias (defaults to gpt-image-2)
   SEEDREAM_BASE_URL         Custom Seedream endpoint
-  BAOYU_IMAGE_GEN_MAX_WORKERS  Override batch worker cap
-  BAOYU_IMAGE_GEN_<PROVIDER>_CONCURRENCY  Override provider concurrency (use underscores: BAOYU_IMAGE_GEN_CODEX_CLI_CONCURRENCY)
-  BAOYU_IMAGE_GEN_<PROVIDER>_START_INTERVAL_MS  Override provider start gap in ms
-  BAOYU_CODEX_IMAGEGEN_BIN  Path to codex-imagegen wrapper (default: bundled scripts/codex-imagegen/main.ts; accepts .ts or legacy .sh/binary)
-  BAOYU_CODEX_IMAGEGEN_CACHE_DIR  Enable idempotency cache for codex-cli provider (default: disabled)
-  BAOYU_CODEX_IMAGEGEN_TIMEOUT_MS  Per-attempt codex exec timeout for codex-cli provider (default: 300000)
-  BAOYU_CODEX_IMAGEGEN_RETRIES  Codex-side retry attempts on retryable errors (default: 2)
-  BAOYU_CODEX_IMAGEGEN_LOG_FILE  Append JSONL diagnostic log for codex-cli provider
+  IMG2IMG_DIRECT_MAX_WORKERS  Override batch worker cap
+  IMG2IMG_DIRECT_<PROVIDER>_CONCURRENCY  Override provider concurrency (use underscores: IMG2IMG_DIRECT_CODEX_CLI_CONCURRENCY)
+  IMG2IMG_DIRECT_<PROVIDER>_START_INTERVAL_MS  Override provider start gap in ms
+  IMG2IMG_CODEX_BIN  Path to codex-imagegen wrapper (default: bundled scripts/codex-imagegen/main.ts; accepts .ts or legacy .sh/binary)
+  IMG2IMG_CODEX_CACHE_DIR  Enable idempotency cache for codex-cli provider (default: disabled)
+  IMG2IMG_CODEX_TIMEOUT_MS  Per-attempt codex exec timeout for codex-cli provider (default: 300000)
+  IMG2IMG_CODEX_RETRIES  Codex-side retry attempts on retryable errors (default: 2)
+  IMG2IMG_CODEX_LOG_FILE  Append JSONL diagnostic log for codex-cli provider
 
-Env file load order: CLI args > EXTEND.md > process.env > <cwd>/.baoyu-skills/.env > ~/.baoyu-skills/.env`);
+Env file load order: CLI args > EXTEND.md > process.env > <cwd>/.img2img-studio/.env > ~/.img2img-studio/.env`);
 }
 
 export function parseArgs(argv: string[]): CliArgs {
@@ -386,8 +386,8 @@ async function loadEnv(): Promise<void> {
   const home = homedir();
   const cwd = process.cwd();
 
-  const homeEnv = await loadEnvFile(path.join(home, ".baoyu-skills", ".env"));
-  const cwdEnv = await loadEnvFile(path.join(cwd, ".baoyu-skills", ".env"));
+  const homeEnv = await loadEnvFile(path.join(home, ".img2img-studio", ".env"));
+  const cwdEnv = await loadEnvFile(path.join(cwd, ".img2img-studio", ".env"));
 
   for (const [k, v] of Object.entries(homeEnv)) {
     if (!process.env[k]) process.env[k] = v;
@@ -536,31 +536,11 @@ export function parseOpenAIImageApiDialect(
   throw new Error(`Invalid OpenAI image API dialect: ${value}`);
 }
 
-type ExtendConfigPathPair = {
-  current: string;
-  legacy: string;
-};
-
-function getExtendConfigPathPairs(cwd: string, home: string): ExtendConfigPathPair[] {
+function getExtendConfigPaths(cwd: string, home: string): string[] {
   return [
-    {
-      current: path.join(cwd, ".baoyu-skills", "baoyu-image-gen", "EXTEND.md"),
-      legacy: path.join(cwd, ".baoyu-skills", "baoyu-imagine", "EXTEND.md"),
-    },
-    {
-      current: path.join(home, ".baoyu-skills", "baoyu-image-gen", "EXTEND.md"),
-      legacy: path.join(home, ".baoyu-skills", "baoyu-imagine", "EXTEND.md"),
-    },
+    path.join(cwd, ".img2img-studio", "direct-api", "EXTEND.md"),
+    path.join(home, ".img2img-studio", "direct-api", "EXTEND.md"),
   ];
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function ensureDir(dir: string): Promise<void> {
@@ -577,22 +557,11 @@ export async function ensureDir(dir: string): Promise<void> {
   }
 }
 
-async function migrateLegacyExtendConfig(cwd: string, home: string): Promise<void> {
-  for (const { current, legacy } of getExtendConfigPathPairs(cwd, home)) {
-    const [hasCurrent, hasLegacy] = await Promise.all([exists(current), exists(legacy)]);
-    if (hasCurrent || !hasLegacy) continue;
-    await ensureDir(path.dirname(current));
-    await rename(legacy, current);
-  }
-}
-
 export async function loadExtendConfig(
   cwd = process.cwd(),
   home = homedir(),
 ): Promise<Partial<ExtendConfig>> {
-  await migrateLegacyExtendConfig(cwd, home);
-
-  const paths = getExtendConfigPathPairs(cwd, home).map(({ current }) => current);
+  const paths = getExtendConfigPaths(cwd, home);
 
   for (const p of paths) {
     try {
@@ -649,7 +618,7 @@ export function parsePositiveBatchInt(value: unknown): number | null {
 }
 
 export function getConfiguredMaxWorkers(extendConfig: Partial<ExtendConfig>): number {
-  const envValue = parsePositiveInt(process.env.BAOYU_IMAGE_GEN_MAX_WORKERS);
+  const envValue = parsePositiveInt(process.env.IMG2IMG_DIRECT_MAX_WORKERS);
   const configValue = extendConfig.batch?.max_workers ?? null;
   return Math.max(1, envValue ?? configValue ?? DEFAULT_MAX_WORKERS);
 }
@@ -673,7 +642,7 @@ export function getConfiguredProviderRateLimits(
   };
 
   for (const provider of ["replicate", "google", "openai", "openrouter", "dashscope", "zai", "minimax", "jimeng", "seedream", "azure", "codex-cli", "agnes"] as Provider[]) {
-    const envPrefix = `BAOYU_IMAGE_GEN_${provider.toUpperCase().replace(/-/g, "_")}`;
+    const envPrefix = `IMG2IMG_DIRECT_${provider.toUpperCase().replace(/-/g, "_")}`;
     const extendLimit = extendConfig.batch?.provider_limits?.[provider];
     configured[provider] = {
       concurrency:
@@ -825,7 +794,7 @@ export function detectProvider(args: CliArgs): Provider {
 
   throw new Error(
     "No API key found. Set GOOGLE_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY, AZURE_OPENAI_API_KEY+AZURE_OPENAI_BASE_URL, OPENROUTER_API_KEY, DASHSCOPE_API_KEY, ZAI_API_KEY, MINIMAX_API_KEY, REPLICATE_API_TOKEN, JIMENG keys, ARK_API_KEY, or AGNES_API_KEY.\n" +
-      "Create ~/.baoyu-skills/.env or <cwd>/.baoyu-skills/.env with your keys."
+      "Create ~/.img2img-studio/.env or <cwd>/.img2img-studio/.env with your keys."
   );
 }
 
