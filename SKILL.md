@@ -1,14 +1,15 @@
 ---
 name: img2img-studio
 description: >
-  图生图工作室（img2img-studio）：第一层用识图（dsh-vision-skill）分析输入图片，第二层按用户要的风格模式生成新图。
-  当用户上传/给出图片并要求「生成类似风格的新图」「换个风格重绘」「做成电商图/套图/主图/详情页」「做成杂志编辑风/抽象艺术/手绘插画/废片焕新」「图生图」「以这张图为基础出图」时触发。
-  支持两种内置模式：photo-art（照片艺术：editorial 编辑杂志风 / revival 白纸手绘风 / 融合风）与 ecommerce（电商：商品主图、卖点图、场景图、详情页、PDP、Amazon/Shopify 图包）。
-  生图走多供应商自动降级（性能+最新模型优先）：DashScope 通义千问（qwen-image-3.0-pro，可复用识图 key）、OpenAI 兼容 API（gpt-image 等）、Z.AI GLM-Image、Seedream 豆包、MiniMax、本地 chatgpt-web 类服务；支持 t2i/i2i、批量并发、质量预设。
-  仅当用户只是想「描述/分析图片」而不要求生成新图时，不应触发（那属于 dsh-vision-skill）。
+  图生图工作室：先识图分析输入图片，再按风格模式生成新图。触发：用户给出/上传图片并要求「生成类似风格的新图」「换个风格重绘」「图生图」「以这张图为基础出图」「做成电商图/套图/主图/详情页」「杂志编辑风/抽象艺术/手绘插画/废片焕新」。
+  不触发：只是「描述/分析图片」而不要求生成新图（那属于 dsh-vision-skill）。
+  模式：photo-art（editorial 编辑杂志风 / revival 白纸手绘风 / 融合风）与 ecommerce（商品主图、卖点图、场景图、详情页、PDP、Amazon/Shopify 图包）。
+  生图多供应商自动降级（性能+最新模型优先）：DashScope qwen-image-3.0-pro（可复用识图 key）、OpenAI 兼容 API（gpt-image）、Z.AI GLM-Image、Seedream、MiniMax、本地 chatgpt-web；支持 t2i/i2i、批量并发、质量预设。
 ---
 
 # 图生图工作室（img2img-studio）
+
+> **路径约定（DSH 0.1.3+）**：本文档相对路径以**本技能资源目录**为基准解析（加载时 harness 给出 `Base directory for this skill`）；跨技能引用写 `..\dsh-vision-skill\...`（三个技能同根安装时成立）。
 
 两层架构：
 
@@ -60,23 +61,23 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 ```powershell
 # 附件 → 磁盘路径（找不到时加 --search 按片段搜）
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\resolve_attachment.mjs" "<attachmentId>"
+node "..\dsh-vision-skill\scripts\resolve_attachment.mjs" "<attachmentId>"
 
 # 识别（本地路径或 URL）
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" "<结构化分析问题>"
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" --url "<图片URL>" "<问题>"
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" "<结构化分析问题>"
+node "..\dsh-vision-skill\scripts\vision.js" --url "<图片URL>" "<问题>"
 ```
 
 **photo-art 模式**（用 `--schema img2img` 强制结构化 JSON 契约：summary/subject/composition/visual(hex 主色)/semantics，输出损坏自动重试）：
 
 ```powershell
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema img2img
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema img2img
 ```
 
 **ecommerce 模式**（用 `--schema ecom` 输出商品结构化 JSON）：
 
 ```powershell
-node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema ecom
+node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema ecom
 ```
 
 识图前可先 `vision.js guard` 检查供应商可用性；`--list-providers` 查看已配置供应商（不泄露密钥）。多图逐张识别后合并。识图失败（配额/网络）时如实告知用户，不要编造图片内容。
@@ -85,19 +86,19 @@ node "$env:USERPROFILE\.agents\skills\dsh-vision-skill\scripts\vision.js" "<图�
 
 ```powershell
 # 探测已配置的供应商（不泄露密钥）
-node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --list-providers
+node "scripts\generate_image.mjs" --list-providers
 
 # 文生图（质量预设：normal=1K / 2k=2K，默认 2k）
-node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --prompt "..." --size 1:1 --quality 2k --output-dir "输出目录"
+node "scripts\generate_image.mjs" --prompt "..." --size 1:1 --quality 2k --output-dir "输出目录"
 
 # 图生图（带参考图，1-3 张最佳；长 Prompt 用 --prompt-file / 多文件用 --promptfiles）
-node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --prompt-file prompt.txt --image "原图路径" --size 3:4 --output-dir "输出目录"
+node "scripts\generate_image.mjs" --prompt-file prompt.txt --image "原图路径" --size 3:4 --output-dir "输出目录"
 
 # 批量（电商套图一次出多张；batch.json 为 JSON 数组，字段: prompt/image/size/quality/output）
-node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --batchfile batch.json --jobs 4 --output-dir "输出目录"
+node "scripts\generate_image.mjs" --batchfile batch.json --jobs 4 --output-dir "输出目录"
 
 # 强制供应商/模型
-node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --prompt "..." --provider dashscope --model qwen-image-3.0-pro --output-dir "输出目录"
+node "scripts\generate_image.mjs" --prompt "..." --provider dashscope --model qwen-image-3.0-pro --output-dir "输出目录"
 ```
 
 供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
@@ -177,7 +178,9 @@ bun $BAOYU --batchfile batch.json --jobs 4
 
 ## 配置
 
-在 `scripts/.env` 或环境变量（脚本会自动回退读取 `dsh-vision-skill/scripts/.env` 的 `VISION_API_KEY`，所以**零配置也能用 DashScope 出图**）：
+> **面板优先（DSH 0.1.3+）**：Web 端 **Settings → 识图与生图**（`dsh-vision-config` 插件）填各通道 API Key / 模型 / 端点，保存后自动同步到 `scripts/.env`（`GEN_PROVIDER_ORDER`、各 key、`VISION_PROVIDERS`），新会话生效；手动改文件会被面板下次保存覆盖。技能根目录可用 `DSH_SKILLS_DIR` 覆盖（默认 `~/.agents/skills`）。
+
+在 `scripts/.env` 或环境变量（脚本会自动回退读取 `..\dsh-vision-skill\scripts\.env` 的 `VISION_API_KEY`，所以**零配置也能用 DashScope 出图**）：
 
 | 变量 | 说明 |
 |---|---|
