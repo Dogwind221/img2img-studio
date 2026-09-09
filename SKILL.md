@@ -39,13 +39,29 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 **任何生图任务开始前**，先按 `references/routing-gate.md` 执行路由门：用 AskUserQuestion 问清三件事，再进入对应工作流。**禁止不问直接生成。**
 
-1. **Q1 生成通道**：展示可用通道清单（dashscope 默认推荐 / chatgpt-web / openai / zai / seedream / minimax / local / codex-cli / **direct 直连（12 家官方 API）** / qoder），用户选一个；无偏好 → dashscope。
+1. **Q1 生成通道**：展示可用通道清单，**一级主通道优先**（`node scripts/generate_image.mjs --list-providers` 看实时状态）：
+   - **一级主通道（订阅制，已接入）**：`codex-cli`（Codex 客户端，Plus 账号）· `chatgpt-web@<账号id>`（ChatGPT 网页账号，无头 Edge + 注入登录态，免费版也能出图）
+   - **API 通道**：dashscope（默认）· openai · zai · seedream · minimax · local · **direct 直连（12 家官方 API）** · qoder
+   - 用户无偏好 → 按 `GEN_PROVIDER_ORDER`（面板排序）走，一级主通道在前；额度用尽/失败自动降级
 2. **Q2 风格/场景**：展示 photo-art 六子风格（editorial / revival / fusion / zine-gathered / zine-distill / zine-minimal）与 ecommerce 类型清单，用户选；无偏好 → 看图片内容或默认 fusion。
 3. **Q3+ 细化需求**（按需 2-3 个）：画幅比例、质量 1k/2k、图内文字（精确文案）、参考图/主体保留、数量、情绪/变体、平台规范。有合理默认的不追问。
 4. **路由执行**：
-   - 通道 = chatgpt-web → `references/chatgpt-web-mode.md` 的浏览器出图流程（不走 generate_image.mjs）
+   - 通道 = `chatgpt-web@<账号id>` → 直接 `generate_image.mjs --provider chatgpt-web@<账号id>`（脚本内部用无头浏览器 + 账号表里的 session token；也可走 `references/chatgpt-web-mode.md` 的可见浏览器流程）
+   - 通道 = `codex-cli` → `generate_image.mjs --provider codex-cli`（用 Codex 客户端登录态，无需 API key）
    - 其他通道 → 选风格后读对应 `references/<mode>.md`，用 `generate_image.mjs --provider <id>` 生成
 5. 在最终交付里注明：**通道、风格、尺寸、模型** + Assumptions / Defaults。
+
+### 订阅制通道（一级主通道）的账号与凭据
+
+三个账号通道由 **Settings → 识图与生图** 面板统一管理（`dsh-vision-config`），面板保存时同步 `GEN_PROVIDER_ORDER` 与 `IMG_CHATGPT_WEB_ACCOUNTS` 到 `scripts/.env`：
+
+| 通道 id | 账号 | 凭据来源 | 出图方式 |
+|---|---|---|---|
+| `chatgpt-web@<账号id>` | ChatGPT 网页账号（如 dogwind 免费版 / leeyf221 免费版） | 面板粘贴 `__Secure-next-auth.session-token` | 无头 Edge + 注入 cookie 驱动 chatgpt.com（`playwright-core` 需可解析） |
+| `codex-cli` | Codex 客户端账号（Plus） | 实时读 `~/.codex/auth.json` | `codex exec` + imagegen |
+
+- 额度看板：面板按 ChatGPT 后端返回的实际出图时刻统计 24h 窗口用量（自动探测），Codex 账号额外显示 5h/7d 窗口百分比。
+- 网页通道若报「登录态已失效」→ 面板重新粘贴 token；`chatgpt-web@<id>` 的 token 来自面板账号表，不额外存副本。
 
 ## 主流程
 

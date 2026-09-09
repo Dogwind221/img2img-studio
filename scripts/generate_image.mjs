@@ -46,8 +46,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const requireFromHere = createRequire(import.meta.url);
 const VERSION = "2.0.0";
 
 /* ---------- .env 加载 ---------- */
@@ -265,6 +267,23 @@ function detectProviders() {
       : !bunFound ? "需要 bun（https://bun.sh）；引擎以 bun 运行 TypeScript"
       : `已就绪；子通道: ${DIRECT_PROVIDERS.join(", ")}（当前默认 ${ENV.DIRECT_PROVIDER || "dashscope"}）`,
   });
+
+  // ChatGPT 网页账号通道（浏览器驱动；凭据来自 dsh-vision-config 面板）
+  const pwCore = loadPlaywrightCore();
+  for (const acc of chatgptWebAccounts()) {
+    const token = chatgptWebToken(acc.id);
+    list.push({
+      id: `chatgpt-web@${acc.id}`,
+      name: acc.label || `ChatGPT 网页（${acc.id}）`,
+      configured: Boolean(pwCore && token),
+      base: `chatgpt-web:${acc.id}`,
+      model: "gpt-image（网页）",
+      key: "", keyMasked: "-",
+      detail: !pwCore ? "缺少 playwright-core（需 @playwright/mcp 或 playwright-core）"
+        : !token ? `账号 ${acc.id} 未保存 session token（在「识图与生图」面板填写）`
+        : "已就绪；用无头 Edge + 注入登录态驱动网页出图",
+    });
+  }
   return list;
 }
 
@@ -639,6 +658,128 @@ async function directEngineGenerate({ prompt, refs, size, n, outputDir, model, d
   return { _directFile: out };
 }
 
+/* ---------- ChatGPT 网页账号通道（chatgpt-web@<accountId>，浏览器驱动） ---------- */
+const PLAYWRIGHT_CANDIDATES = [
+  path.join(os.homedir(), 'AppData', 'Roaming', 'npm', 'node_modules', '@playwright', 'mcp', 'node_modules', 'playwright-core'),
+  path.join(process.env.APPDATA || '', 'npm', 'node_modules', '@playwright', 'mcp', 'node_modules', 'playwright-core'),
+];
+
+/** 解析 playwright-core：先找 DSH 环境里已安装的位置，再退回常规解析。 */
+function loadPlaywrightCore() {
+  for (const c of PLAYWRIGHT_CANDIDATES) {
+    try { return requireFromHere(c) } catch { /* 继续 */ }
+  }
+  try { return requireFromHere('playwright-core') } catch { return null }
+}
+
+/** dsh-vision-config 的账号表路径（含网页账号的 session token）。 */
+function chatgptAccountsFile() {
+  return path.join(os.homedir(), '.dsh', 'dsh-vision-config', 'chatgpt-accounts.json');
+}
+
+/** 读取某个 ChatGPT 网页账号的 session token（不打印）。 */
+function chatgptWebToken(accountId) {
+  try {
+    const store = JSON.parse(fs.readFileSync(chatgptAccountsFile(), 'utf8'));
+    const acc = (store.accounts || []).find((a) => String(a.id).includes(accountId) || String(a.auth?.accountId || '').startsWith(accountId));
+    return acc?.auth?.sessionToken || null;
+  } catch { return null }
+}
+
+/** 环境里可用的网页账号（来自 dsh-vision-config 同步的 IMG_CHATGPT_WEB_ACCOUNTS）。 */
+function chatgptWebAccounts() {
+  return (ENV.IMG_CHATGPT_WEB_ACCOUNTS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const idx = entry.indexOf(':');
+      return idx > 0 ? { id: entry.slice(0, idx), label: entry.slice(idx + 1) } : { id: entry, label: entry };
+    });
+}
+
+/** NextAuth 会把超长 session token 切成 .0/.1/... 分片 cookie。 */
+function splitSessionCookie(name, value) {
+  const CHUNK = 3900;
+  if (value.length <= CHUNK) return [{ name, value }];
+  const parts = [];
+  for (let i = 0; i * CHUNK < value.length; i++) parts.push({ name: `${name}.${i}`, value: value.slice(i * CHUNK, (i + 1) * CHUNK) });
+  return parts;
+}
+
+/**
+ * 用浏览器驱动 ChatGPT 网页出图（复用账号表里的 session token 注入 cookie）。
+ * @param {object} task - 生成任务（prompt/refs/size/outputDir/accountId）。
+ * @returns {Promise<{_directFile: string}>} 落盘图片路径。
+ */
+async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) {
+  const core = loadPlaywrightCore();
+  if (!core) throw new Error('缺少 playwright-core（ChatGPT 网页通道需要浏览器驱动；可 npm i -g @playwright/mcp）');
+  const token = chatgptWebToken(accountId);
+  if (!token) throw new Error(`账号 ${accountId} 没有 session token——请在「识图与生图」面板填凭据或重新读取`);
+
+  const browser = await core.chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chrome', headless: true });
+  try {
+    const ctx = await browser.newContext({
+      viewport: { width: 1440, height: 900 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0',
+    });
+    await ctx.addCookies(splitSessionCookie('__Secure-next-auth.session-token', token).map((c) => ({
+      ...c, domain: '.chatgpt.com', path: '/', httpOnly: true, secure: true, sameSite: 'Lax',
+    })));
+    const page = await ctx.newPage();
+    await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 90000 });
+    // Cloudflare 过站 + 登录态渲染
+    await page.waitForSelector('#prompt-textarea', { timeout: 90000 });
+    const loggedOut = await page.evaluate(() => /登录以获取基于已保存聊天/.test(document.body.innerText || ''));
+    if (loggedOut) throw new Error(`账号 ${accountId} 登录态已失效（session token 过期？）`);
+
+    if (refs && refs.length) {
+      try {
+        const input = page.locator('input[type="file"]').first();
+        await input.setInputFiles(refs.map((f) => path.resolve(f)), { timeout: 15000 });
+        await page.waitForTimeout(3000);
+      } catch { /* 参考图失败则退化为纯文本 */ }
+    }
+
+    await page.locator('#prompt-textarea').first().click();
+    await page.keyboard.type(prompt, { delay: 8 });
+    await page.waitForTimeout(600);
+    const send = page.locator('[data-testid="send-button"], #composer-submit-button').first();
+    if (await send.count()) await send.click().catch(() => {});
+    else await page.keyboard.press('Enter');
+
+    // 等图出现（最长 5 分钟）
+    let src = null;
+    for (let i = 0; i < 60; i++) {
+      await page.waitForTimeout(5000);
+      src = await page.evaluate(() => {
+        const imgs = [...document.querySelectorAll('main img')].filter((x) => x.naturalWidth > 200);
+        const last = imgs[imgs.length - 1];
+        return last ? (last.currentSrc || last.src) : null;
+      });
+      if (src && /estuary\/content|blob:|data:image/.test(src)) break;
+      const tail = await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(-200));
+      if (/无法生成图片|生成图片时出错|reached the limit|超出.*上限/.test(tail)) throw new Error(`网页出图被拒绝: ${tail}`);
+    }
+    if (!src) throw new Error('等待网页出图超时（5 分钟未返回图片）');
+
+    const b64 = await page.evaluate(async (url) => {
+      const r = await fetch(url, { credentials: 'include' });
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      return btoa(s);
+    }, src);
+    fs.mkdirSync(outputDir, { recursive: true });
+    const out = path.join(outputDir, `chatgpt-web-${accountId}-${Date.now()}.png`);
+    fs.writeFileSync(out, Buffer.from(b64, 'base64'));
+    return { _directFile: out };
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 /* ---------- 单次生成（含重试） ---------- */
 async function generateOnce(task, providers, retries) {
   const { prompt, size, quality, n, providerId, model, dialect } = task;
@@ -672,6 +813,7 @@ async function generateOnce(task, providers, retries) {
         else if (p.id === "codex-cli") resp = await codexCliGenerate({ ...args });
         else if (p.id === "qoder") resp = await qoderCliGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images") });
         else if (p.id === "direct") resp = await directEngineGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images"), model, directProvider: task.directProvider });
+        else if (p.id.startsWith("chatgpt-web@")) resp = await chatgptWebGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images"), accountId: p.id.slice("chatgpt-web@".length) });
         else throw new Error(`未知供应商 ${p.id}`);
         return { ok: true, provider: p.id, model: resp?._model || p.model, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
       } catch (e) {
