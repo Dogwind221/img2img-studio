@@ -47,9 +47,24 @@ node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs"
 
 # 4. 批量（电商套图）
 node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --batchfile batch.json --jobs 4 --output-dir out
+
+# 5. 看各 ChatGPT 账号的档位/额度（读「识图与生图」面板库，不泄露凭据）
+node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --accounts
 ```
 
 Agent 完整工作流（识图 → 路由门 → 生成 → QA）见 `SKILL.md`。
+
+### 开发与测试
+
+```powershell
+# 编排脚本自测：链序 / 额度判定 / 代理 / CLI 契约（纯离线，不花钱、不联网）
+node scripts\selftest.mjs --verbose
+
+# 直连引擎单测（TypeScript，bun 运行）
+bun test engines\direct-api\scripts
+```
+
+推送与 PR 会自动跑同一套（见 `.github/workflows/selftest.yml`）。
 
 ## 生成通道
 
@@ -63,6 +78,7 @@ Agent 完整工作流（识图 → 路由门 → 生成 → QA）见 `SKILL.md`�
 | `minimax` | 海螺 image-01（人物一致性） | `MINIMAX_API_KEY` |
 | `local` | 本地 chatgpt-web 类服务 | `IMG_HTTP_URL` |
 | `codex-cli` | Codex/ChatGPT 订阅出图 | codex CLI + imagegen 权限 |
+| `chatgpt-web@<账号>` | ChatGPT 网页账号出图（浏览器驱动，L1 优先） | 面板添加账号后自动同步 |
 
 配置方式见 `scripts/.env.example`（也可直接用环境变量）。
 

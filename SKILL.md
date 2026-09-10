@@ -113,8 +113,11 @@ node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" --schema ecom
 ## L2 生成（generate_image.mjs v2）
 
 ```powershell
-# 探测已配置的供应商（不泄露密钥）
+# 探测已配置的供应商（不泄露密钥；含链序 chain 与账号额度 accounts）
 node "scripts\generate_image.mjs" --list-providers
+
+# 各 ChatGPT 账号的档位/额度视图（读「识图与生图」面板库；free 档显示 24h 内探测到的生成数）
+node "scripts\generate_image.mjs" --accounts
 
 # 文生图（质量预设：normal=1K / 2k=2K，默认 2k）
 node "scripts\generate_image.mjs" --prompt "..." --size 1:1 --quality 2k --output-dir "输出目录"
@@ -127,7 +130,14 @@ node "scripts\generate_image.mjs" --batchfile batch.json --jobs 4 --output-dir "
 
 # 强制供应商/模型
 node "scripts\generate_image.mjs" --prompt "..." --provider dashscope --model qwen-image-3.0-pro --output-dir "输出目录"
+
+# 跳过面板探测到「额度已用尽」的网页账号通道（等价 IMG_SKIP_EXHAUSTED=1）
+node "scripts\generate_image.mjs" --prompt "..." --skip-exhausted --output-dir "输出目录"
 ```
+
+**尺寸语义**：`--size` 给比例（`1:1` / `16:9` / `2.35:1`）时按 `--quality` 档位换算；给显式像素（`1024x1536`）则**原样透传**，不再被档位放大。
+
+**参数错误**：`--provider` 写了不存在的通道会**直接报错退出**（不会静默回落成整链），避免「以为指定了 A 却跑了 B」。
 
 供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
 

@@ -1,0 +1,22 @@
+name: selftest
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: 编排脚本自测（链序 / 额度 / 代理 / CLI 契约，纯离线）
+        run: node scripts/selftest.mjs --verbose
+      - name: 直连引擎单测
+        run: bun test engines/direct-api/scripts

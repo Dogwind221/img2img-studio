@@ -80,7 +80,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* ---------- CLI ---------- */
 function parseArgs() {
   const argv = process.argv.slice(2);
-  const a = { prompt: "", promptFiles: [], images: [], size: "", quality: "2k", n: 1, provider: "auto", model: "", directProvider: "", negativePrompt: "", dialect: "", batchfile: "", jobs: 4, retries: 2, outputDir: "", dryRun: false, listProviders: false, json: false };
+  const a = { prompt: "", promptFiles: [], images: [], size: "", quality: "2k", n: 1, provider: "auto", model: "", directProvider: "", negativePrompt: "", dialect: "", batchfile: "", jobs: 4, retries: 2, outputDir: "", dryRun: false, listProviders: false, accounts: false, skipExhausted: false, json: false };
   const next = (i) => (i + 1 < argv.length ? argv[++i] : "");
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -103,11 +103,15 @@ function parseArgs() {
       case "--output-dir": case "--output": a.outputDir = next(i); break;
       case "--dry-run": a.dryRun = true; break;
       case "--list-providers": a.listProviders = true; break;
+      case "--accounts": a.accounts = true; break;
+      case "--skip-exhausted": a.skipExhausted = true; break;
       case "--json": a.json = true; break;
       case "--version": console.log(VERSION); process.exit(0);
       case "--help": case "-h":
-        console.log(fs.readFileSync(__filename, "utf8").split("用法:")[1]?.split("*/")[0] || "see header");
+        // .mjs 没有 __filename，必须用 import.meta.url（此前用 __filename 直接崩）
+        console.log(fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("用法:")[1]?.split("*/")[0]?.trim() || "see header");
         process.exit(0);
+        break;
       default:
         if (!v.startsWith("--") && !a.prompt) a.prompt = v;
     }
@@ -134,6 +138,9 @@ function normSize(size, quality = "2k") {
   const qi = quality === "normal" ? 0 : 1;
   if (!s) return RATIO_SIZE["1:1"][qi];
   if (RATIO_SIZE[s]) return RATIO_SIZE[s][qi];
+  // 显式像素尺寸（两个数字都 ≥ 64 才算像素，避免把 16:9 之类比例当尺寸）：原样透传，不被 quality 档位放大
+  const px = s.match(/^(\d{2,5})[x*](\d{2,5})$/);
+  if (px && Number(px[1]) >= 64 && Number(px[2]) >= 64) return `${Number(px[1])}x${Number(px[2])}`;
   // 纯比例如 2.35:1
   const m = s.match(/^(\d+(?:\.\d+)?)[:：x](\d+(?:\.\d+)?)$/);
   if (m) {
@@ -142,7 +149,7 @@ function normSize(size, quality = "2k") {
     const long = Math.round((short * Math.max(w, h)) / Math.min(w, h));
     return w >= h ? `${long}x${short}` : `${short}x${long}`;
   }
-  return s.replace(/\*/g, "x").replace(/[xX]/g, "x"); // 显式 WxH / W*H
+  return s.replace(/\*/g, "x").replace(/[xX]/g, "x"); // 兜底：显式 WxH / W*H
 }
 
 function dataURLFromFile(file) {
@@ -712,6 +719,90 @@ function chatgptAccountsFile() {
   return path.join(os.homedir(), '.dsh', 'dsh-vision-config', 'chatgpt-accounts.json');
 }
 
+/** 读取面板账号库（含配额探测结果）；读不到/解析失败返回 []。 */
+function readChatgptAccounts() {
+  try {
+    const store = JSON.parse(fs.readFileSync(chatgptAccountsFile(), 'utf8'));
+    return Array.isArray(store.accounts) ? store.accounts : [];
+  } catch { return [] }
+}
+
+/**
+ * 账号额度摘要（不含任何凭据）；免费档不设本地上限，只看窗口内探测到的生成次数。
+ * @param {object} acc - 面板账号条目。
+ * @returns {object} 摘要。
+ */
+function accountQuota(acc) {
+  const auto = acc.auto || {};
+  const windowHours = Number(acc.windowHours) || 24;
+  const gen = Array.isArray(auto.generatedAt) ? auto.generatedAt.map(Number).filter(Number.isFinite) : [];
+  const cutoff = Date.now() - windowHours * 3600 * 1000;
+  const cu = auto.codexUsage || null;
+  return {
+    id: acc.id,
+    label: acc.label || acc.id,
+    plan: acc.plan || acc.auth?.planType || 'unknown',
+    kind: acc.auth?.sessionToken ? 'web' : (acc.auth?.codexAuth || acc.auth?.accessToken ? 'codex' : 'unknown'),
+    accountId: acc.auth?.accountId || null,
+    planSource: acc.planSource || null,
+    windowHours,
+    generatedInWindow: gen.filter((t) => t >= cutoff).length,
+    generatedTotal: gen.length,
+    lastProbeAt: auto.lastProbeAt || null,
+    lastError: auto.lastError || null,
+    codexUsage: cu ? {
+      planType: cu.planType || null,
+      credits: cu.credits ?? null,
+      primaryUsedPercent: cu.primary?.usedPercent ?? null,
+      primaryResetAt: cu.primary?.resetAt ?? null,
+      secondaryUsedPercent: cu.secondary?.usedPercent ?? null,
+      secondaryResetAt: cu.secondary?.resetAt ?? null,
+    } : null,
+    exhausted: isAccountExhausted(acc),
+  };
+}
+
+/**
+ * 是否「探测到额度已用尽」。免费档永远为 false（不设本地上限，用到服务端拒绝为止）。
+ * 付费档看 codexUsage 的用量窗口：主窗口（有副窗口则要求两个都）打满 100% 才算用尽。
+ * @param {object} acc - 面板账号条目。
+ * @returns {boolean} 是否判定用尽。
+ */
+function isAccountExhausted(acc) {
+  const plan = String(acc?.plan || acc?.auth?.planType || '').toLowerCase();
+  if (!plan || plan === 'free') return false;
+  const cu = acc?.auto?.codexUsage || acc?.codexUsage || null;
+  if (!cu) return false;
+  const p = Number(cu.primary?.usedPercent ?? cu.primaryUsedPercent);
+  const s = Number(cu.secondary?.usedPercent ?? cu.secondaryUsedPercent);
+  if (!Number.isFinite(p)) return false;
+  return p >= 100 && (!Number.isFinite(s) || s >= 100);
+}
+
+/** 是否启用「跳过已用尽账号」（--skip-exhausted 或 IMG_SKIP_EXHAUSTED=1）。 */
+function skipExhaustedEnabled(taskFlag) {
+  if (taskFlag === true) return true;
+  return /^(1|true|yes|on)$/i.test(String(ENV.IMG_SKIP_EXHAUSTED || ''));
+}
+
+/**
+ * 从通道 id 列表里剔除「面板探测到用尽」的网页账号通道。
+ * @param {string[]} ids - 通道 id 顺序。
+ * @param {object[]} accounts - 面板账号条目。
+ * @returns {{ids: string[], dropped: string[]}} 过滤结果。
+ */
+function dropExhaustedAccounts(ids, accounts) {
+  const dropped = [];
+  const kept = ids.filter((id) => {
+    if (!id.startsWith('chatgpt-web@')) return true;
+    const accId = id.slice('chatgpt-web@'.length);
+    const acc = accounts.find((x) => String(x.id).includes(accId) || String(x.auth?.accountId || '').startsWith(accId));
+    if (acc && isAccountExhausted(acc)) { dropped.push(id); return false }
+    return true;
+  });
+  return { ids: kept, dropped };
+}
+
 /** 读取某个 ChatGPT 网页账号的 session token（不打印）。 */
 function chatgptWebToken(accountId) {
   try {
@@ -840,10 +931,24 @@ async function generateOnce(task, providers, retries) {
   let sizePx = normSize(size, quality);
   if (images.length) sizePx = clampForI2i(sizePx);
   const configured = providers.filter((p) => p.configured);
-  const wanted = providerId && providerId !== "auto" ? providers.find((p) => p.id === providerId) : null;
+  const explicit = providerId && providerId !== "auto";
+  const wanted = explicit ? providers.find((p) => p.id === providerId) : null;
+  // 显式指定的通道必须存在：否则静默回落成 auto 会「意外走别的通道」（曾实际触发真实生成）
+  if (explicit && !wanted) {
+    throw new Error(`未知供应商 ${providerId}；可用: ${providers.map((p) => p.id).join(", ")}`);
+  }
+  if (wanted && !wanted.configured) throw new Error(`供应商 ${providerId} 未配置（缺 key 或依赖）`);
   // auto 时按 GEN_PROVIDER_ORDER（插件面板的优先级排序）调整链顺序
-  const chain = wanted ? [wanted] : orderedChain(configured).map((id) => configured.find((p) => p.id === id)).filter(Boolean);
-  if (wanted && !wanted.configured) throw new Error(`供应商 ${providerId} 未配置`);
+  let chainIds = wanted ? [wanted.id] : orderedChain(configured);
+  // 可选：跳过面板探测到「额度已用尽」的网页账号通道（保底至少留一个）
+  if (!wanted && skipExhaustedEnabled(task.skipExhausted)) {
+    const { ids, dropped } = dropExhaustedAccounts(chainIds, readChatgptAccounts());
+    if (dropped.length && ids.length) {
+      console.error(`[generate_image] 跳过已用尽账号: ${dropped.join(", ")}`);
+      chainIds = ids;
+    }
+  }
+  const chain = chainIds.map((id) => configured.find((p) => p.id === id)).filter(Boolean);
   const errors = [];
   for (const p of chain) {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -891,7 +996,29 @@ async function main() {
   const providers = detectProviders();
 
   if (a.listProviders) {
-    console.log(JSON.stringify({ version: VERSION, providers: providers.map((p) => ({ id: p.id, name: p.name, configured: p.configured, base: p.base, model: p.model, key: p.keyMasked, detail: p.detail })) }, null, 2));
+    const configured = providers.filter((p) => p.configured);
+    console.log(JSON.stringify({
+      version: VERSION,
+      chain: orderedChain(configured),
+      skipExhausted: skipExhaustedEnabled(a.skipExhausted),
+      providers: providers.map((p) => ({ id: p.id, name: p.name, configured: p.configured, base: p.base, model: p.model, key: p.keyMasked, detail: p.detail })),
+      accounts: readChatgptAccounts().map(accountQuota),
+    }, null, 2));
+    process.exit(0);
+  }
+
+  // 账号额度视图（只读面板库，不泄露凭据）
+  if (a.accounts) {
+    const accounts = readChatgptAccounts().map(accountQuota);
+    console.log(JSON.stringify({
+      version: VERSION,
+      store: chatgptAccountsFile(),
+      skipExhausted: skipExhaustedEnabled(a.skipExhausted),
+      accounts,
+      summary: accounts.length
+        ? accounts.map((x) => `${x.label}(${x.plan}${x.exhausted ? "·已用尽" : ""}): ${x.codexUsage?.primaryUsedPercent != null ? `主窗口 ${x.codexUsage.primaryUsedPercent}%` : `${x.windowHours}h 内 ${x.generatedInWindow} 张`}`).join("；")
+        : "账号库为空（在「识图与生图」面板添加账号）",
+    }, null, 2));
     process.exit(0);
   }
 
@@ -946,6 +1073,7 @@ async function main() {
     const configured = providers.filter((p) => p.configured);
     console.log(JSON.stringify({
       version: VERSION,
+      dryRun: true,
       prompt: prompt.slice(0, 200) + (prompt.length > 200 ? "…" : ""),
       refs: a.images, size: sizePx, quality: a.quality, n: a.n,
       providerChain: (a.provider && a.provider !== "auto" ? [a.provider] : orderedChain(configured)),
@@ -959,7 +1087,13 @@ async function main() {
     providerId: a.provider, model: a.model, dialect: a.dialect, negativePrompt: a.negativePrompt,
     directProvider: a.directProvider,
     outputDir: a.outputDir,
-  }, providers, a.retries);
+    skipExhausted: a.skipExhausted,
+  }, providers, a.retries).catch((e) => {
+    // 参数错误（如未知供应商）不该走「整链回落」：直接报错退出
+    if (a.json) console.log(JSON.stringify({ ok: false, errors: [{ provider: a.provider, error: e.message }] }, null, 2));
+    console.error(`生图失败: ${e.message}`);
+    process.exit(1);
+  });
 
   if (result.ok) {
     console.log(JSON.stringify({ ok: true, provider: result.provider, model: result.model, size: result.size, files: result.files }, null, 2));
@@ -972,4 +1106,19 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((e) => { console.error("生图失败:", e.message); process.exit(1); });
+/* ---------- 模块导出（供 selftest / 其它脚本单测；CLI 行为不变） ---------- */
+export {
+  VERSION, parseArgs, normSize, clampForI2i, pxToAspect, detectProviders, orderedChain,
+  isQuotaError, generateOnce, readChatgptAccounts, accountQuota, isAccountExhausted,
+  dropExhaustedAccounts, skipExhaustedEnabled, systemProxyUrl, childEnvWithProxy,
+  splitSessionCookie, chatgptWebAccounts, saveImages,
+};
+
+/** 只有被当作 CLI 直接执行时才跑 main（被 import 时不执行）。 */
+const __isCli = (() => {
+  try { return process.argv[1] ? path.resolve(process.argv[1]) === fileURLToPath(import.meta.url) : false; }
+  catch { return false; }
+})();
+
+if (__isCli) main().catch((e) => { console.error("生图失败:", e.message); process.exit(1); });
+
