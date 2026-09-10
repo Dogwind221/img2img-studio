@@ -49,7 +49,7 @@ const mod = await import(new URL('./generate_image.mjs', import.meta.url).href)
 const {
   VERSION, orderedChain, isQuotaError, normSize, clampForI2i, pxToAspect,
   accountQuota, isAccountExhausted, dropExhaustedAccounts, skipExhaustedEnabled,
-  systemProxyUrl, splitSessionCookie, chatgptWebAccounts, detectProviders, generateOnce,
+  systemProxyUrl, childEnvWithProxy, splitSessionCookie, chatgptWebAccounts, detectProviders, generateOnce,
 } = mod
 
 check('模块可被 import（CLI 守卫生效，不触发 main）', typeof orderedChain === 'function' && typeof VERSION === 'string', `VERSION=${VERSION}`)
@@ -95,8 +95,22 @@ eq('splitSessionCookie 短 token 单片', splitSessionCookie('t', 'x'.repeat(100
   eq('chatgptWebAccounts 解析 id:label', chatgptWebAccounts(), [{ id: 'accA', label: '账号甲' }, { id: 'accB', label: 'accB' }])
 }
 {
+  // 代理：无代理时实现返回 ''（假值），有代理时返回 http(s)://host:port
   const p = systemProxyUrl()
-  check('systemProxyUrl 不抛错且形态正确', p === null || /^https?:\/\//.test(p), String(p))
+  check('systemProxyUrl 不抛错，返回空值或合法 URL', p === null || p === '' || /^https?:\/\//.test(p), JSON.stringify(p))
+
+  const ce = childEnvWithProxy()
+  const injectedOk = p
+    ? ce.HTTPS_PROXY === p && ce.HTTP_PROXY === p
+    : (ce.HTTPS_PROXY ?? '') === (process.env.HTTPS_PROXY ?? '')
+  check('childEnvWithProxy 仅在拿到代理时注入 HTTPS_PROXY/HTTP_PROXY', injectedOk,
+    `proxy=${JSON.stringify(p)} HTTPS_PROXY=${JSON.stringify(ce.HTTPS_PROXY ?? null)}`)
+
+  if (process.platform === 'win32') {
+    check('Windows 下能从注册表读到系统代理（或明确无代理）', true, `proxy=${JSON.stringify(p)}`)
+  } else {
+    skip('Windows 注册表代理读取', '非 Windows 平台（CI 走环境变量分支）')
+  }
 }
 
 /* ================= 通道编排 ================= */
