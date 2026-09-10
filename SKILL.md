@@ -4,7 +4,7 @@ description: >
   图生图工作室：先识图分析输入图片，再按风格模式生成新图。触发：用户给出/上传图片并要求「生成类似风格的新图」「换个风格重绘」「图生图」「以这张图为基础出图」「做成电商图/套图/主图/详情页」「杂志编辑风/抽象艺术/手绘插画/废片焕新」。
   不触发：只是「描述/分析图片」而不要求生成新图（那属于 dsh-vision-skill）。
   模式：photo-art（editorial 编辑杂志风 / revival 白纸手绘风 / 融合风）与 ecommerce（商品主图、卖点图、场景图、详情页、PDP、Amazon/Shopify 图包）。
-  生图多供应商自动降级（性能+最新模型优先）：DashScope qwen-image-3.0-pro（可复用识图 key）、OpenAI 兼容 API（gpt-image）、Z.AI GLM-Image、Seedream、MiniMax、本地 chatgpt-web；支持 t2i/i2i、批量并发、质量预设。
+  生图通道一级优先 ChatGPT 网页（image 2.5）：免费网页账号先用，额度用尽后自有账号（Codex/Plus）优先，再降级 API（DashScope qwen-image-3.0-pro、OpenAI gpt-image、Z.AI、Seedream、MiniMax）；支持 t2i/i2i、批量并发、质量预设。
 ---
 
 # 图生图工作室（img2img-studio）
@@ -40,9 +40,9 @@ scripts/generate_image.mjs（多供应商自动降级）
 **任何生图任务开始前**，先按 `references/routing-gate.md` 执行路由门：用 AskUserQuestion 问清三件事，再进入对应工作流。**禁止不问直接生成。**
 
 1. **Q1 生成通道**：展示可用通道清单，**一级主通道优先**（`node scripts/generate_image.mjs --list-providers` 看实时状态）：
-   - **一级主通道（订阅制，已接入）**：`codex-cli`（Codex 客户端，Plus 账号）· `chatgpt-web@<账号id>`（ChatGPT 网页账号，无头 Edge + 注入登录态，免费版也能出图）
-   - **API 通道**：dashscope（默认）· openai · zai · seedream · minimax · local · **direct 直连（12 家官方 API）** · qoder
-   - 用户无偏好 → 按 `GEN_PROVIDER_ORDER`（面板排序）走，一级主通道在前；额度用尽/失败自动降级
+   - ⭐ **一级主通道 = ChatGPT 网页（image 2.5）**：`chatgpt-web@<账号id>`（订阅额度出图，文字渲染/真实感最稳、不花 API 钱）。**免费网页账号先用**（免费档不设本地上限，用到服务端拒绝为止）→ **额度用尽后自有账号优先**：`chatgpt-web@<自有账号>` 再 `codex-cli`（自有 Plus 订阅，读 `~/.codex/auth.json`）
+   - **二级 = API 通道**（订阅通道都失败/额度用尽才降到这里）：dashscope（默认）· openai · zai · seedream · minimax · local · **direct 直连（12 家官方 API）** · qoder
+   - 用户无偏好 → 按 `GEN_PROVIDER_ORDER`（面板排序）走，一级主通道在前；额度用尽/失败自动降级（额度类错误不重试，直接切下一通道）
 2. **Q2 风格/场景**：展示 photo-art 六子风格（editorial / revival / fusion / zine-gathered / zine-distill / zine-minimal）与 ecommerce 类型清单，用户选；无偏好 → 看图片内容或默认 fusion。
 3. **Q3+ 细化需求**（按需 2-3 个）：画幅比例、质量 1k/2k、图内文字（精确文案）、参考图/主体保留、数量、情绪/变体、平台规范。有合理默认的不追问。
 4. **路由执行**：
@@ -57,10 +57,11 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 | 通道 id | 账号 | 凭据来源 | 出图方式 |
 |---|---|---|---|
-| `chatgpt-web@<账号id>` | ChatGPT 网页账号（如 dogwind 免费版 / leeyf221 免费版） | 面板粘贴 `__Secure-next-auth.session-token` | 无头 Edge + 注入 cookie 驱动 chatgpt.com（`playwright-core` 需可解析） |
-| `codex-cli` | Codex 客户端账号（Plus） | 实时读 `~/.codex/auth.json` | `codex exec` + imagegen |
+| `chatgpt-web@<账号id>` ⭐**一级优先** | ChatGPT 网页账号（免费账号先用；用尽切自有账号） | 面板粘贴 `__Secure-next-auth.session-token` | 无头 Edge + 注入 cookie 驱动 chatgpt.com（`playwright-core` 需可解析） |
+| `codex-cli` ⭐**一级（自有账号）** | 自有订阅账号（Plus）——免费网页额度用尽后的优先选择 | 实时读 `~/.codex/auth.json` | `codex exec` + imagegen |
 
 - 额度看板：面板按 ChatGPT 后端返回的实际出图时刻统计 24h 窗口用量（自动探测），Codex 账号额外显示 5h/7d 窗口百分比。
+- **优先级**：免费网页账号 → 自有账号（`codex-cli` / 自有网页账号）→ API 通道；顺序以面板 `GEN_PROVIDER_ORDER` 为准，`node scripts/generate_image.mjs --accounts` 可看各账号档位与剩余额度。
 - 网页通道若报「登录态已失效」→ 面板重新粘贴 token；`chatgpt-web@<id>` 的 token 来自面板账号表，不额外存副本。
 
 ## 主流程

@@ -82,15 +82,14 @@ bun test engines\direct-api\scripts
 
 | 通道 | 说明 | 前置条件 |
 |---|---|---|
-| `dashscope`（默认） | 通义千问 qwen-image-3.0-pro，国内直连，t2i+i2i | 零配置（复用识图 key） |
-| `chatgpt-web` | ChatGPT 网页 gpt-image | 浏览器登录态 |
-| `openai` | OpenAI 兼容 API（gpt-image 等） | `IMG_BASE_URL`+`IMG_MODEL`+`IMG_API_KEY` |
+| `chatgpt-web@<账号>` ⭐**一级优先** | ChatGPT 网页出图（image 2.5）；免费账号先上，用尽切自有账号 | 面板添加账号后自动同步 |
+| `codex-cli` ⭐**一级（自有账号）** | 自有订阅出图（Codex 客户端 / Plus），免费额度用尽后的优先选择 | codex CLI 已登录 + imagegen 权限 |
+| `dashscope`（API 默认） | 通义千问 qwen-image-3.0-pro，国内直连，t2i+i2i | 零配置（可复用识图 key） |
+| `openai` | OpenAI 兼容 API（默认 `gpt-image-2`） | `IMG_BASE_URL`+`IMG_MODEL`+`IMG_API_KEY` |
 | `zai` | Z.AI GLM-Image（中文文字渲染强，不支持参考图） | `ZAI_API_KEY` |
 | `seedream` | 豆包（4.0+ 支持参考图） | `ARK_API_KEY` |
 | `minimax` | 海螺 image-01（人物一致性） | `MINIMAX_API_KEY` |
 | `local` | 本地 chatgpt-web 类服务 | `IMG_HTTP_URL` |
-| `codex-cli` | Codex/ChatGPT 订阅出图 | codex CLI + imagegen 权限 |
-| `chatgpt-web@<账号>` | ChatGPT 网页账号出图（浏览器驱动，L1 优先） | 面板添加账号后自动同步 |
 
 配置方式见 `scripts/.env.example`（也可直接用环境变量）。
 
@@ -117,10 +116,20 @@ img2img-studio/
 
 ## 模型策略
 
-性能优先 + 发布时间最近优先（DashScope 默认链）：
+**一级优先：ChatGPT 网页通道（image 2.5）**——订阅额度出图，文字渲染与真实感最稳，且不花 API 钱。
+
+1. **免费网页账号先上**：`chatgpt-web@<免费账号>`（免费档不设本地上限，一路用到服务端拒绝为止）
+2. **免费额度用尽 → 自有账号优先**：`chatgpt-web@<自有账号>` → `codex-cli`（自有 Plus 订阅，实时读 `~/.codex/auth.json`，不用 API key）
+3. **订阅通道都不可用/失败 → API 通道**（下面这套 DashScope 链）
+
+实际顺序由面板「识图与生图」排的 `GEN_PROVIDER_ORDER` 决定（当前：免费账号 1 → 免费账号 2 → `codex-cli` → `qoder`）；额度类错误不重试、立即切下一通道（`isQuotaError`）；加 `--skip-exhausted` 还能按面板探测结果跳过已用尽的付费账号。
+
+**API 通道内部**（性能优先 + 发布时间最近优先）：
+
 - 生图 t2i：`qwen-image-3.0-pro` → `qwen-image-3.0` → `wan2.7-image-pro` → `wanx2.1-t2i-plus` → `wanx2.1-t2i-turbo`
 - 生图 i2i：`qwen-image-3.0-pro` → `wan2.7-image-pro`
-- 识图（dsh-vision-skill）：`qwen3.8-max` → `qwen3.7-plus` → `qwen3.7-flash` → ...
+- OpenAI 兼容通道默认模型：`gpt-image-2`
+- 识图（dsh-vision-skill）：`qwen3.8-max` → `qwen3.7-plus` → `qwen3.7-flash` → `qwen-vl-max` → `qwen-vl-plus`
 
 ## License
 
