@@ -8,7 +8,7 @@
 
 ```
 输入图片
-  ↓ 第一层：识图（依赖 dsh-vision-skill，见下方「前置依赖」）
+  ↓ 第一层：识图（多模态模型 → read_image 直接看；纯文本模型 → dsh-vision-skill 的 vision.js）
   结构化描述（主体/构图/色彩/材质/情绪/卖点）
   ↓ Step 0 路由门（出图前必问）
   ① 选生成通道 → ② 选风格/场景 → ③ 细化需求（尺寸/文字/参考图/数量）
@@ -31,7 +31,19 @@
 Copy-Item -Recurse -Force "img2img-studio" "$env:USERPROFILE\.agents\skills\"
 ```
 
-依赖：Node.js 18+。**前置依赖：dsh-vision-skill**（识图脚本，需放在与 img2img-studio 相同的 skills 目录下，或通过 `DSH_SKILLS_DIR` 环境变量指定；详见 SKILL.md）。
+依赖：**Node.js 18+**（`generate_image.mjs` 本身零第三方依赖）。
+
+`dsh-vision-skill` 是**条件依赖，不是硬前置**——按你的情况看要不要装：
+
+| 你的情况 | 要不要 dsh-vision-skill | 原因 |
+|---|---|---|
+| 会话模型是**多模态**（`read_image` 可用，如 `DeepSeek-V4.1-Flash`） | ❌ 不用 | L1 识图直接 `read_image` 原生看图，不跑 `vision.js`、不耗外部额度 |
+| 会话模型是**纯文本**（如 `GLM-5.3`） | ✅ 要 | 只有这种情况才需要 `vision.js` 走识图链 |
+| 想把 **Web 拖入的图片**当参考图（i2i） | ✅ 要 | 附件只有 `attachmentId`、没有本地路径，得用它的 `resolve_attachment.mjs` 换出路径再传 `--image`（用本地路径或 URL 时不需要） |
+| 想**零配置出图**（复用识图 key） | ✅ 装了更省事 | `generate_image.mjs` 会自动回退读 `..\dsh-vision-skill\scripts\.env` |
+| 已自己配好 `DASHSCOPE_API_KEY` / `IMG_*`，且只做文生图 | ❌ 不用 | 生图链不依赖它 |
+
+需要时把它放在与 img2img-studio **同一个 skills 目录**下即可（或用 `DSH_SKILLS_DIR` 指定）。
 
 ## 快速开始
 
@@ -39,7 +51,7 @@ Copy-Item -Recurse -Force "img2img-studio" "$env:USERPROFILE\.agents\skills\"
 # 1. 查看已配置的生图供应商（不泄露密钥）
 node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --list-providers
 
-# 2. 文生图（默认 DashScope qwen-image-3.0-pro；零配置即用——自动复用 dsh-vision-skill 的 key）
+# 2. 文生图（默认 DashScope qwen-image-3.0-pro；零配置即用——自动复用 dsh-vision-skill 的 key，自己设 DASHSCOPE_API_KEY 也一样）
 node "$env:USERPROFILE\.agents\skills\img2img-studio\scripts\generate_image.mjs" --prompt "红色苹果白底产品图" --size 1:1 --output-dir out
 
 # 3. 图生图（带参考图）
