@@ -30,6 +30,7 @@ scripts/generate_image.mjs（多供应商自动降级）
 | `photo-art` | 照片 → 艺术化新图 | `references/photo-art-mode.md` | 杂志、编辑、editorial、抽象、艺术、手绘、插画、白纸、留白、焕新、revival、诗意、文艺、zine、拾景、拼贴、纸刊、极简海报 |
 | `ecommerce` | 商品图 → 电商视觉 | `references/ecommerce-mode.md` | 主图、套图、卖点图、场景图、详情页、PDP、listing、Amazon、Shopify、TikTok、A+、广告图、社媒图、直播图、包装图、商品图、电商 |
 | `chatgpt-web` | 用 ChatGPT 网页端出图（无 API key） | `references/chatgpt-web-mode.md` | chatgpt 网页、网页出图、用 ChatGPT 账号、gpt-image 网页版 |
+| `image-editor` | 输入框内图片标记/抠图/涂抹擦除/改尺寸后交给供应商 | `references/image-editor.md` | 标记、标注、涂抹、擦除、抠图、移除背景、改尺寸、编辑这张图、局部重绘、image editor |
 
 路由规则：先看用户明确说的风格词；没提时看图片内容（L1 识图判断是商品照还是生活照）；仍不确定就简短问一句（给两个选项）。用户提到的风格不在注册表里 → 按最接近的模式处理并在回复中说明假设。
 
@@ -77,6 +78,29 @@ scripts/generate_image.mjs（多供应商自动降级）
 5. **生成**：通道为 chatgpt-web 时走浏览器出图（chatgpt-web-mode.md）；否则调 `scripts/generate_image.mjs --provider <通道>`（用法见下），参考图传原图；供应商自动探测降级。
 6. **QA 检查**：见下方清单；不合格修正后重生成。
 7. **交付**：给生成文件路径 + **通道/风格/尺寸/模型** + 关键假设；附最终 Prompt 便于用户复现。
+
+## GUI 图像编辑（image-editor 模式）
+
+面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-editor` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸，点「放回输入框」后：编辑结果作为**附件**回到输入框，草稿里多出一段 `<!-- img2img-editor:begin --> … <!-- img2img-editor:end -->` 说明块（含附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest）。完整参考：`references/image-editor.md`。
+
+| 用户动作 | agent 动作 |
+|---|---|
+| ① 编号标记（每处一个输入框写改法） | 读 `marked-*.png` 核对位置 → `mask-from-markers` 转掩码 → `erase` 局部重绘，或把标记坐标+改法写进 prompt 走 i2i |
+| ② 移除背景（面板内本地预览） | `bg-remove`（`auto` 优先云端 `images/edits background=transparent`，失败降级本地）→ 得透明 PNG 再出图 |
+| ③ 涂抹擦除（白=要处理） | 用面板导出的 `mask-*.png` 直接 `erase`（`auto`：dashscope → openai → i2i） |
+| ④ 调整大小 | 面板已按用户设定导出，通常直接用；确需再改才 `resize`（会与旧掩码失配） |
+| ⑤ 点「放回输入框」 | 收到请求块 → 落地 manifest → 按需补步 → `generate_image.mjs` 出图 |
+
+```powershell
+# 块里的 JSON 落地（附件先按 files.* 原名收拢到一个目录）
+node "scripts\edit_image.mjs" manifest --manifest edit.json --image-dir "附件目录" --out-dir "输出目录"
+# 也可直接把块里 JSON: 那行粘成字符串：--manifest '{"version":1,...}' --image-dir "附件目录"
+# 标记 → 掩码 → 局部重绘（掩码必须与基底同尺寸）
+node "scripts\edit_image.mjs" mask-from-markers --markers markers.json --like "03-erased.png" --out mask.png
+node "scripts\edit_image.mjs" erase --image "03-erased.png" --mask mask.png --prompt "把这块的花换成玫瑰" --out "04-edit.png"
+```
+
+> ⛔ **硬约束：收到编辑请求块时必须先读附件（`read_image` / `vision.js`）确认内容，再动手**——块里 `files.*` 与附件同名，`edited-*` 才是出图基底（`marked-*` 只是位置指引）；掩码必须与基底同尺寸；标记不得画进成图；失败要如实报通道与错误，不静默降级。
 
 ## L1 识图
 
@@ -194,7 +218,7 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 
 **生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
 
-**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。
+**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。GUI 编辑器交回的编辑请求（标记/抠图/涂抹擦除/改尺寸）走 `scripts/edit_image.mjs`（op：`info`/`resize`/`bg-remove`/`erase`/`markers`/`mask-from-markers`/`manifest`），像素操作在 `scripts/edit/`（纯 Node PNG 编解码 + 光栅算法，输入只支持 PNG；JPEG 走 `scripts/preprocess/raster.ps1` 备用通道），详见 `references/image-editor.md`。
 
 ### 身份保持参考图准则（重要）
 
@@ -232,6 +256,10 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 - [ ] 没有虚构认证/数据/销量/评价
 - [ ] 生图失败时按指引回退，不静默降级输出
 - [ ] 批量任务输出含成功/失败统计与每张失败原因
+- [ ] **图像编辑任务**：已先 `read_image`/`vision.js` 读附件再动手，manifest 解析无误，基底用的是 `edited-*`（不是 `marked-*`）
+- [ ] **图像编辑任务**：掩码与基底同尺寸（DashScope 通道宽高在 512–4096），标记只作位置指引、未画进成图
+- [ ] **图像编辑任务**：抠图产物是真透明通道 PNG；本地纯色抠图降级已如实标注（没说成云端抠图）
+- [ ] **图像编辑任务**：`erase` 失败时报出尝试过的通道与错误原文，未静默降级
 - [ ] 输出文件路径、使用的模式/风格/模型、假设清单都已告知用户
 
 ## 配置
