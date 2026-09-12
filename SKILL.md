@@ -66,7 +66,11 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 ## 主流程
 
-1. **解析输入**：图片来自 Web 附件（`attachmentId` 形如 `sha256:<hex>`）→ 用 `resolve_attachment.mjs` 换出磁盘路径（**i2i 必须**：`--image` 只吃路径；本地路径/URL 直接给）。注意这一步与模型是否多模态无关——多模态模型能用 `read_image` 直接"看"附件，但拿不到可传给生图脚本的路径。
+1. **解析输入（拿参考图路径）**：按这个顺序取路径——
+   - ① 消息里已经有 `Normalized copy (read-only; may be resized or re-encoded): <路径>`（DSH 0.1.5+ 会给）→ 可直接当 `--image`，**但它是归一化副本**（见下方质量警告）
+   - ② 只有 `attachmentId`（`sha256:<hex>`）→ 拼对象路径 `<DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>`，或用 `..\dsh-vision-skill\scripts\resolve_attachment.mjs` 换出路径（**i2i 必须**：`--image` 只吃路径）
+   - ③ 用户给了本地路径/URL → 直接用（**i2i 首选，见质量警告**）
+   注意这一步与模型是否多模态无关——多模态模型能用 `read_image` 直接"看"附件，但**当素材喂生图**要的是路径与画质，不是"能不能看见"。
 2. **L1 识图（必做，禁止跳过）**：先判定模型是否原生看图——**多模态模型**（`read_image` 可用）直接用它读图；**纯文本模型**走 dsh-vision-skill 的 `vision.js`（见下）。两种情况都必须拿到结构化描述，不能凭空编造图片内容。**多模态 + 只做文生图（不传参考图）时，整个流程不需要 dsh-vision-skill**。
 3. **模式确认**：Step 0 已确定通道与风格；此处读取对应 `references/<mode>.md`（photo-art 含 zine 子风格 / ecommerce / chatgpt-web）。
 4. **构建 Prompt**：按模式文档的模板 + 识图描述注入。**任何 Prompt 都必须独立可生成**（即使图生图失败回退 t2i 也能用）——把主体描述完整写进文字。
@@ -85,13 +89,26 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 > 判定方法：调用一次 `read_image`；成功即多模态。也可先跑 `node "..\dsh-vision-skill\scripts\vision.js" guard` 看判定（无显式信号时返回 `null`，仍需按 `howToDecide` 探测）。
 > 需要**强结构化 JSON 契约**（`--schema img2img|ecom|ground`，带字段校验与损坏重试）时，即使模型是多模态也值得调一次脚本；只需粗略理解图片时不要调。
-> **本技能对 dsh-vision-skill 是条件依赖**：多模态会话直接 `read_image` 即可识图；只有当①会话模型是纯文本、或②要把 Web 附件当参考图（需 `resolve_attachment.mjs` 拿路径）、或③想复用它的识图 key 时，才需要装它。
+> **本技能对 dsh-vision-skill 是条件依赖**：多模态会话直接 `read_image` 即可识图；只有当①会话模型是纯文本、或②拿不到附件现成路径（需 `resolve_attachment.mjs`）、或③想复用它的识图 key 时，才需要装它。
 
-**纯文本模型 / 需要结构化契约时**（附件先解析成磁盘路径）：
+### ⚠️ 参考图画质：归一化副本 ≠ 原图
+
+给 `--image` 的路径会影响出图画质，按这个优先级选：
+
+| 优先级 | 来源 | 说明 |
+|---|---|---|
+| 1 | 用户给的**本地原图路径 / URL** | 原始字节，无损，i2i 首选 |
+| 2 | 附件对象路径 `<DSH_HOME>\attachments\v1\objects\<前2位>\<hex>` | 也是**原始字节**（提交时的原样副本） |
+| 3 | 消息里的 `Normalized copy` 路径 | **可能已被重编码/缩放**：GIF、动图、**带 EXIF 的相机/手机 JPEG**、16-bit、非 sRGB、超出预算的图都会被处理；只有干净的 PNG/JPEG/WebP 且在预算内才原样透传 |
+
+归一化副本**适合"看图"**（L1 识图、OCR 判断内容），**不适合"当素材"**——参考图的细节/色彩会被改动，i2i 出来的图跟着走样。要复现用户原图效果时，明确告诉用户「拖入的图会被平台归一化，建议给本地原图路径」。
+
+**纯文本模型 / 需要结构化契约时**（附件先拿到磁盘路径）：
 
 ```powershell
-# 附件 → 磁盘路径（找不到时加 --search 按片段搜）
-node "..\dsh-vision-skill\scripts\resolve_attachment.mjs" "<attachmentId>"
+# 附件 → 磁盘路径：先看消息里有没有 Normalized copy 路径；没有则拼对象路径或用脚本
+#   <DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>
+node "..\dsh-vision-skill\scripts\resolve_attachment.mjs" "<attachmentId>"   # 找不到时加 --search 按片段搜
 
 # 识别（本地路径或 URL）
 node "..\dsh-vision-skill\scripts\vision.js" "<图片路径>" "<结构化分析问题>"

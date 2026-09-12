@@ -39,7 +39,7 @@ Copy-Item -Recurse -Force "img2img-studio" "$env:USERPROFILE\.agents\skills\"
 |---|---|---|
 | 会话模型是**多模态**（`read_image` 可用，如 `DeepSeek-V4.1-Flash`） | ❌ 不用 | L1 识图直接 `read_image` 原生看图，不跑 `vision.js`、不耗外部额度 |
 | 会话模型是**纯文本**（如 `GLM-5.3`） | ✅ 要 | 只有这种情况才需要 `vision.js` 走识图链 |
-| 想把 **Web 拖入的图片**当参考图（i2i） | ✅ 要 | 附件只有 `attachmentId`、没有本地路径，得用它的 `resolve_attachment.mjs` 换出路径再传 `--image`（用本地路径或 URL 时不需要） |
+| 想把 **Web 拖入的图片**当参考图（i2i） | 🔸 多数情况不用 | DSH 0.1.5+ 的消息里已带 `Normalized copy (read-only…)` 路径，可直接当 `--image`；**只有拿不到路径**（只剩 `attachmentId`）时才需要 `resolve_attachment.mjs`，或自己拼 `<DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>`。注意归一化副本可能被重编码/缩放——**要画质就用本地原图路径** |
 | 想**零配置出图**（复用识图 key） | ✅ 装了更省事 | `generate_image.mjs` 会自动回退读 `..\dsh-vision-skill\scripts\.env` |
 | 已自己配好 `DASHSCOPE_API_KEY` / `IMG_*`，且只做文生图 | ❌ 不用 | 生图链不依赖它 |
 
