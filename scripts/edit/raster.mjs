@@ -190,6 +190,41 @@ export function drawMarkerPins(source, markers) {
   return out;
 }
 
+/** One white rectangle on black — a rectangular mask for local edits. */
+export function maskRectRaster(width, height, rect) {
+  const out = Raster.create(width, height, [0, 0, 0, 255]);
+  const x0 = Math.max(0, Math.min(width - 1, Math.round(rect.x)));
+  const y0 = Math.max(0, Math.min(height - 1, Math.round(rect.y)));
+  const x1 = Math.max(x0 + 1, Math.min(width, Math.round(rect.x + rect.width)));
+  const y1 = Math.max(y0 + 1, Math.min(height, Math.round(rect.y + rect.height)));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = out.index(x, y);
+      out.data[i] = 255; out.data[i + 1] = 255; out.data[i + 2] = 255; out.data[i + 3] = 255;
+    }
+  }
+  return out;
+}
+
+/** One filled ellipse inscribed in the rect, as a white-on-black mask (softer edge than a rectangle). */
+export function maskEllipseRaster(width, height, rect) {
+  const out = Raster.create(width, height, [0, 0, 0, 255]);
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const rx = Math.max(1, rect.width / 2);
+  const ry = Math.max(1, rect.height / 2);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const nx = (x + 0.5 - cx) / rx;
+      const ny = (y + 0.5 - cy) / ry;
+      if (nx * nx + ny * ny > 1) continue;
+      const i = out.index(x, y);
+      out.data[i] = 255; out.data[i + 1] = 255; out.data[i + 2] = 255; out.data[i + 3] = 255;
+    }
+  }
+  return out;
+}
+
 /** One filled circle per marker, as a white-on-black mask. */
 export function maskFromMarkers(width, height, markers, radiusRatio = 0.03) {
   const out = Raster.create(width, height, [0, 0, 0, 255]);

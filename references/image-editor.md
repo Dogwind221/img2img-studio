@@ -111,7 +111,7 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 | `erase` | `erase --image in.png --mask mask.png --prompt "抹掉并补背景" --out out.png [--provider auto\|dashscope\|openai\|i2i]` | `--provider auto`；`--prompt`（默认「移除涂抹区内容并用周围背景自然填补」）；`--threshold 128` | 底图+掩码 → 重绘后的 PNG |
 | `markers` | `markers --image in.png --markers markers.json --out marked.png` | — | PNG + 标记 JSON → 带编号徽章的 PNG（位置指引图） |
 | `mask-from-markers` | `mask-from-markers --markers markers.json --like in.png --out mask.png [--radius 0.03]` | `--like <图>` 或 `--size WxH`（二选一，必需）；`--radius`（0.03，圆半径 = `max(8, min(w,h)×radius)`） | 标记 JSON → 黑底白圆的圆形掩码 PNG |
-| `local-edit` | `local-edit --image in.png --markers markers.json --prompt "..." --out out.png [--radius 0.12] [--padding 0.6] [--highlight overlay\|none]` | `--radius`（0.12，标记半径 = `min(w,h)×radius`）；`--padding`（0.6，裁剪区外扩比例，短边至少 768px）；`--highlight`（overlay 涂红 / none 不给高亮） | 底图 + 标记 → 只改标记处的整图（**推荐用于「换/加某个细节」**） |
+| `local-edit` | `local-edit --image in.png --markers markers.json --prompt "..." --out out.png [--radius 0.12] [--padding 0.6] [--highlight overlay\|none] [--crop x,y,w,h] [--mask-rect x,y,w,h] [--mask-ellipse x,y,w,h] [--feather 2] [--gen-provider <id>]` | `--radius`（0.12，标记半径 = `min(w,h)×radius`）；`--padding`（0.6）；`--highlight`（overlay/none）；`--crop`/`--mask-rect`/`--mask-ellipse`（图像像素坐标，显式指定裁剪框与可改区域）；`--feather`（2，边界羽化像素，接缝生硬就加大）；`--gen-provider`（透传给 generate_image.mjs 指定通道） | 底图 + 标记 → 只改指定区域的整图（**推荐用于「换/加某个细节」**） |
 | `manifest` | `manifest --manifest edit.json --out-dir out [--generate] [--size 1:1] [--prompt "..."]` | `--manifest` 可给**文件路径或直接粘 JSON 字符串**；`--image-dir`（inline JSON 时的附件目录，默认 cwd）；`--out-dir`（默认 `<manifest 所在目录>/edited`）；`--size`/`--mode`/`--quality`；`--generate`；`--provider` | manifest → `01-resized.png` / `02-bg-removed.png` / `03-erased.png` + `base` 路径 + `markers` + `steps` |
 
 标记文件格式（`markers.json`，`x`/`y` 为**归一化坐标**）：
@@ -147,6 +147,18 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 4. 结果里给出 `changedRatio`（掩码内改动比例）。**< 5% 会打 ⚠️ 警告**，说明模型没按要求改（典型原因：通道把上传的参考图当成了结果、或需要走掩码通道）。
 
 实测经验（1774×887 角色设定图，面部加金链）：`--highlight none` + 局部放大图比涂红高亮更可靠——涂红的圆形高亮容易被模型当成「内容」画进结果，而**局部放大图 + 裁剪框本身就传达了位置**；`--highlight overlay` 更适合「抹掉某物」这类需要明确边界的诉求。
+
+**把改动范围钉死（人像/设定图必看）**：默认的圆形标记半径按 `min(w,h)×--radius` 算，`0.12` 在近景人像上会**圈到眼睛**——模型于是把眼睛/眉毛一起重画，设定图直接报废（实测踩过）。要「只改眼睛以下」这类诉求，用显式几何：
+
+```powershell
+# 椭圆掩码（眼睛以下的面纱带）+ 12px 羽化：边界自然，眼睛逐字节不动
+node "scripts\edit_image.mjs" local-edit --image base.png --markers m.json --highlight none `
+  --mask-ellipse 1370,215,260,145 --feather 12 --prompt "...面纱保持完整覆盖，眼睛与眉毛完全不动"
+```
+
+- 矩形硬边 + 小羽化会在布料上留一条可见补丁边界（实测出现过「露出一条皮肤色横带」），**优先椭圆 + `--feather 8~16`**；
+- prompt 里明确「不要露出皮肤 / 保持材质与褶皱」能显著降低越界重绘；
+- 交付前核对：`changedRatio` 之外，另用掩码对结果与原图做**掩码外像素比对**（`scripts/edit/raster.mjs` 的 mask* + 逐像素 diff），眼睛/文字这类关键区域必须 0 像素漂移。
 
 > ⚠️ **通道返回原图 = 失败**：`generate_image.mjs` 的网页通道曾经按「页面里最后一张 >200px 的图」取结果，会把**自己上传的参考图**当成生成结果（图生图静默返回原图）。现已按回合 role 排除用户上传图、只取助手回合的图；`edit_image.mjs` 另外硬校验「生成结果与输入逐字节相同 → 直接判失败并报错」，不允许静默返回原图。
 

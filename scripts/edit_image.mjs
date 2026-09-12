@@ -35,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { probeSize } from "./edit/png.mjs";
 import {
   binarizeRaster, compositePatch, compositeWithMask, cropRect, cutoutRaster, drawMarkerPins,
-  maskFromMarkers, maskToAlphaRaster, overlayMaskRaster, readRaster, resizeRaster, writePng,
+  maskFromMarkers, maskEllipseRaster, maskRectRaster, maskToAlphaRaster, overlayMaskRaster, readRaster, resizeRaster, writePng,
 } from "./edit/raster.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +71,7 @@ function parseArgs(argv) {
   const a = {
     op: "", image: "", mask: "", markers: "", manifest: "", out: "", outDir: "", imageDir: "",
     size: "", mode: "cover", provider: "auto", prompt: "", tolerance: 36, radius: 0.03, padding: 0.6, highlight: "overlay",
+    crop: "", maskRect: "", maskEllipse: "", feather: 2, genProvider: "",
     threshold: 128, like: "", generate: false, json: false, help: false, quality: "normal",
   };
   const next = (i) => (i + 1 < argv.length ? argv[++i] : "");
@@ -92,6 +93,11 @@ function parseArgs(argv) {
       case "--radius": a.radius = parseFloat(next(i)) || 0.03; break;
       case "--padding": a.padding = parseFloat(next(i)) || 0.6; break;
       case "--highlight": a.highlight = (next(i) || "overlay").toLowerCase(); break;
+      case "--crop": a.crop = next(i); break;
+      case "--mask-rect": a.maskRect = next(i); break;
+      case "--mask-ellipse": a.maskEllipse = next(i); break;
+      case "--feather": a.feather = parseInt(next(i), 10) || 2; break;
+      case "--gen-provider": a.genProvider = next(i); break;
       case "--threshold": a.threshold = parseInt(next(i), 10) || 128; break;
       case "--like": a.like = next(i); break;
       case "--quality": a.quality = (next(i) || "normal").toLowerCase(); break;
@@ -202,7 +208,7 @@ function tempPng(raster, name) {
  * stdout/stderr 重定向到文件而不是管道：DSH 沙箱禁止管道 stdio（EPERM），
  * 重定向到文件在两种沙箱模式下都能用，还能顺便从 --json 输出里读出真实通道。
  */
-function runGenerateImage(prompt, imagePath, targetOut) {
+function runGenerateImage(prompt, imagePath, targetOut, provider = "") {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "img2img-gen-"));
   const logFile = path.join(scratch, "run.log");
   const fd = fs.openSync(logFile, "w");
@@ -211,6 +217,7 @@ function runGenerateImage(prompt, imagePath, targetOut) {
     const args = [
       path.join(__dirname, "generate_image.mjs"), "--prompt", prompt, "--output-dir", scratch, "--json",
       ...(imagePath ? ["--image", path.resolve(imagePath)] : []),
+      ...(provider ? ["--provider", provider] : []),
     ];
     const res = spawnSync(process.execPath, args, { stdio: ["ignore", fd, fd] });
     status = res.status ?? -1;
@@ -461,7 +468,11 @@ async function opLocalEdit(a) {
   const wanted = Math.max(768, Math.round(Math.max(maxX - minX, maxY - minY) * (1 + padding)));
   const width = Math.min(base.width, wanted);
   const height = Math.min(base.height, wanted);
-  const crop = cropRect(base, (minX + maxX) / 2 - width / 2, (minY + maxY) / 2 - height / 2, width, height);
+  // --crop x,y,w,h 显式指定裁剪框（图像像素坐标）；不给就按标记包围盒居中取方形
+  const explicitCrop = /^\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+$/.test(a.crop) ? a.crop.split(",").map(Number) : null;
+  const crop = explicitCrop
+    ? cropRect(base, explicitCrop[0], explicitCrop[1], explicitCrop[2], explicitCrop[3])
+    : cropRect(base, (minX + maxX) / 2 - width / 2, (minY + maxY) / 2 - height / 2, width, height);
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "img2img-local-"));
   const cropPath = writePng(path.join(work, "crop.png"), crop.raster);
@@ -471,7 +482,16 @@ async function opLocalEdit(a) {
     y: (marker.y * base.height - crop.y) / crop.height,
     text: marker.text,
   }));
-  const cropMask = maskFromMarkers(crop.width, crop.height, cropMarkers, radius / Math.min(crop.width, crop.height));
+  // --mask-rect / --mask-ellipse x,y,w,h（图像像素坐标）把可改区域限制成一条带：
+  // 想「只改眼睛以下」时比圆形标记更可控；椭圆 + 大羽化的接缝比矩形自然
+  const explicitRect = /^\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+$/.test(a.maskRect) ? a.maskRect.split(",").map(Number) : null;
+  const explicitEllipse = /^\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*\d+$/.test(a.maskEllipse) ? a.maskEllipse.split(",").map(Number) : null;
+  const shapeRect = explicitEllipse ?? explicitRect;
+  const cropMask = shapeRect
+    ? (explicitEllipse ? maskEllipseRaster : maskRectRaster)(crop.width, crop.height, {
+      x: shapeRect[0] - crop.x, y: shapeRect[1] - crop.y, width: shapeRect[2], height: shapeRect[3],
+    })
+    : maskFromMarkers(crop.width, crop.height, cropMarkers, radius / Math.min(crop.width, crop.height));
   const cropMaskPath = writePng(path.join(work, "crop-mask.png"), cropMask);
   const patchPath = path.join(work, "patch.png");
   const markerText = markers.map((marker) => marker.text).filter(Boolean).join("；");
@@ -484,7 +504,7 @@ async function opLocalEdit(a) {
   const erase = a.highlight === "none"
     // 不给高亮：直接把裁剪图交给模型（局部放大图 + 「目标在正中心」），避免红色被画进结果
     ? (() => {
-      const generated = runGenerateImage(prompt, cropPath, patchPath);
+      const generated = runGenerateImage(prompt, cropPath, patchPath, a.genProvider);
       return { provider: generated.provider, model: generated.model, attempts: [] };
     })()
     : await opErase({
@@ -492,7 +512,7 @@ async function opLocalEdit(a) {
       provider: a.provider, threshold: a.threshold,
     });
   // 两道守边：补丁 → 裁剪图（掩码内），裁剪图 → 原图（整块贴回）
-  const patched = compositePatch(crop.raster, readRaster(patchPath), 0, 0, cropMask);
+  const patched = compositePatch(crop.raster, readRaster(patchPath), 0, 0, cropMask, a.feather);
   const out = writePng(a.out, compositePatch(base, patched, crop.x, crop.y, null));
   // 诊断：掩码内到底改了多少（模型没动 / 只把高亮留在图里时一眼看出来）
   let changed = 0;
