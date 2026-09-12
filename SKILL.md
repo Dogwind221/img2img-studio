@@ -218,7 +218,7 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 
 **生成模式决策**：单张/1-2 张 → 单图模式；多张且 Prompt 已定稿 → `--batchfile`（并发、统一限流）；每张还需单独构思 → 子代理。
 
-**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。GUI 编辑器交回的编辑请求（标记/抠图/涂抹擦除/改尺寸）走 `scripts/edit_image.mjs`（op：`info`/`resize`/`bg-remove`/`erase`/`markers`/`mask-from-markers`/`manifest`），像素操作在 `scripts/edit/`（纯 Node PNG 编解码 + 光栅算法，输入只支持 PNG；JPEG 走 `scripts/preprocess/raster.ps1` 备用通道），详见 `references/image-editor.md`。
+**图片预处理工具**（`scripts/preprocess/`，Windows 内置 System.Drawing，零依赖）：抠图去背景→透明参考图（`cutout.ps1`）、主色提取→Prompt 精确色板（`extract-palette.ps1`）、主体定位裁剪（`vision.js --schema ground` + `crop.ps1`）、交付用轻量 JPG 副本（`to-jpeg.ps1 -ImagePath x.png -OutputPath y.jpg [-Quality 88] [-Width 1400]`）。电商生成前推荐先抠图 + 取主色（详见 ecommerce-mode.md ⑨）。GUI 编辑器交回的编辑请求（标记/抠图/涂抹擦除/改尺寸）走 `scripts/edit_image.mjs`（op：`info`/`resize`/`bg-remove`/`erase`/`markers`/`mask-from-markers`/`local-edit`/`manifest`），像素操作在 `scripts/edit/`（纯 Node PNG 编解码 + 光栅算法，输入只支持 PNG；JPEG 走 `scripts/preprocess/raster.ps1` 备用通道），详见 `references/image-editor.md`。
 
 ### 身份保持参考图准则（重要）
 

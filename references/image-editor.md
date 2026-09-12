@@ -203,7 +203,8 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 | `scripts/edit/raster.mjs` | 光栅算法：双线性缩放、resize(cover/contain/stretch)、二值化、白→alpha 掩码、标记圆点/编号（内置 5×7 数字字形，无字体依赖）、标记→圆形掩码、涂红 overlay、本地纯色抠图（边框 flood fill） |
 
 - **输入只支持 PNG**（面板导出的都是 PNG）；**JPEG 只能读尺寸**（`info` 可用），要做像素操作请先转 PNG。
-- **备用通道**：`scripts/preprocess/raster.ps1`（Windows 内置 System.Drawing，零依赖）是给 agent **用 pwsh 直接调用**的，支持 JPEG，op 为 `info / resize / binarize / mask-alpha / mask-from-markers / markers / overlay-mask`。适合非 PNG 输入或想绕开 Node 的场合。
+- **备用通道**：`scripts/preprocess/raster.ps1`（Windows 内置 System.Drawing，零依赖）是给 agent **用 PowerShell 直接调用**的（本机若有 pwsh 用 `pwsh -File`，只有 Windows PowerShell 时用 `powershell -File`），支持 JPEG，op 为 `info / resize / binarize / mask-alpha / mask-from-markers / markers / overlay-mask`。适合非 PNG 输入或想绕开 Node 的场合。
+- **交付副本**：`scripts/preprocess/to-jpeg.ps1 -ImagePath x.png -OutputPath y.jpg [-Quality 88] [-Width 1400]` 生成轻量 JPG（PNG 母版留档；JPEG 无 alpha，透明区按 `-Background` 压平，默认黑）。
 - ⚠️ **已知偏差（照实说）**：`edit_image.mjs` 的 header 注释写着「本脚本不启动任何子进程」，但实现里有**两处**子进程调用——`erase --provider i2i` 的兜底、`manifest --generate`——都是 `spawnSync(process.execPath, [generate_image.mjs, ...], { stdio: "inherit" })`，即**只复用同目录的 Node 脚本、只用了沙箱允许的 `inherit` stdio**。像素处理本身确实零子进程；引用这条约束时按本表描述，别照抄 header 的原话。
 
 ---
