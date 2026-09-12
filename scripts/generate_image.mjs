@@ -880,9 +880,16 @@ async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) 
     for (let i = 0; i < 60; i++) {
       await page.waitForTimeout(5000);
       src = await page.evaluate(() => {
-        const imgs = [...document.querySelectorAll('main img')].filter((x) => x.naturalWidth > 200);
-        const last = imgs[imgs.length - 1];
-        return last ? (last.currentSrc || last.src) : null;
+        // 只取「助手回合」里的图：用户回合里的 <img> 是上传的参考图缩略图，
+        // 早期实现按 main img 取最后一张，会把自己上传的图当成生成结果
+        // （图生图静默返回原图）。这里按 role 排除用户回合，并优先助手回合。
+        const usable = (img) => img.naturalWidth > 200 && img.closest('[data-message-author-role="user"]') === null;
+        const srcOf = (img) => img.currentSrc || img.src;
+        const assistantImgs = [...document.querySelectorAll('[data-message-author-role="assistant"] img')]
+          .filter(usable).map(srcOf).filter(Boolean);
+        if (assistantImgs.length > 0) return assistantImgs[assistantImgs.length - 1];
+        const fallback = [...document.querySelectorAll('main img')].filter(usable).map(srcOf).filter(Boolean);
+        return fallback.length > 0 ? fallback[fallback.length - 1] : null;
       });
       if (src && /estuary\/content|blob:|data:image/.test(src)) break;
       const tail = await page.evaluate(() => (document.body.innerText || '').replace(/\s+/g, ' ').slice(-240));

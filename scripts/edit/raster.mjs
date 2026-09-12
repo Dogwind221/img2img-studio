@@ -218,6 +218,77 @@ export function overlayMaskRaster(source, mask, alpha = 0.45) {
   return out;
 }
 
+/** 取一块矩形区域（越界部分按图像边界裁剪）。 */
+export function cropRect(source, x, y, width, height) {
+  const x0 = Math.max(0, Math.min(source.width - 1, Math.round(x)));
+  const y0 = Math.max(0, Math.min(source.height - 1, Math.round(y)));
+  const w = Math.max(1, Math.min(source.width - x0, Math.round(width)));
+  const h = Math.max(1, Math.min(source.height - y0, Math.round(height)));
+  const out = new Raster(w, h, new Uint8Array(w * h * 4));
+  for (let row = 0; row < h; row++) {
+    const src = source.index(x0, y0 + row);
+    out.data.set(source.data.subarray(src, src + w * 4), row * w * 4);
+  }
+  return { raster: out, x: x0, y: y0, width: w, height: h };
+}
+
+/**
+ * 把一张小图（补丁）贴回原图的 (x,y)，可选按同尺寸掩码只取掩码内的像素
+ * ——「局部重绘后守边」的关键一步：补丁外的一切保持原样。
+ */
+export function compositePatch(original, patch, x, y, mask = null, feather = 2) {
+  const out = original.clone();
+  const targetW = mask?.width ?? patch.width;
+  const targetH = mask?.height ?? patch.height;
+  const scaled = patch.width === targetW && patch.height === targetH
+    ? patch
+    : resizeRaster(patch, targetW, targetH, "cover");
+  const weight = new Float32Array(targetW * targetH);
+  if (mask === null) weight.fill(1);
+  else {
+    for (let index = 0; index < targetW * targetH; index++) {
+      const i = index * 4;
+      weight[index] = luminance(mask.data[i], mask.data[i + 1], mask.data[i + 2]) >= 128 ? 1 : 0;
+    }
+    if (feather > 0) {
+      for (let pass = 0; pass < feather; pass++) {
+        const snapshot = Float32Array.from(weight);
+        for (let row = 0; row < targetH; row++) {
+          for (let col = 0; col < targetW; col++) {
+            let sum = 0; let count = 0;
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const nx = col + dx; const ny = row + dy;
+                if (nx < 0 || ny < 0 || nx >= targetW || ny >= targetH) continue;
+                sum += snapshot[ny * targetW + nx]; count++;
+              }
+            }
+            weight[row * targetW + col] = sum / count;
+          }
+        }
+      }
+    }
+  }
+  for (let row = 0; row < targetH; row++) {
+    const ty = y + row;
+    if (ty < 0 || ty >= out.height) continue;
+    for (let col = 0; col < targetW; col++) {
+      const tx = x + col;
+      if (tx < 0 || tx >= out.width) continue;
+      const alpha = weight[row * targetW + col];
+      if (alpha <= 0) continue;
+      const src = scaled.index(col, row);
+      const dst = out.index(tx, ty);
+      for (let channel = 0; channel < 4; channel++) {
+        out.data[dst + channel] = alpha >= 1
+          ? scaled.data[src + channel]
+          : Math.round(out.data[dst + channel] * (1 - alpha) + scaled.data[src + channel] * alpha);
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Keep the generated pixels only inside the mask and the original pixels
  * outside it — the safety net for the prompt-only fallback, where a model may

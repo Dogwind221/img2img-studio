@@ -111,6 +111,7 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 | `erase` | `erase --image in.png --mask mask.png --prompt "抹掉并补背景" --out out.png [--provider auto\|dashscope\|openai\|i2i]` | `--provider auto`；`--prompt`（默认「移除涂抹区内容并用周围背景自然填补」）；`--threshold 128` | 底图+掩码 → 重绘后的 PNG |
 | `markers` | `markers --image in.png --markers markers.json --out marked.png` | — | PNG + 标记 JSON → 带编号徽章的 PNG（位置指引图） |
 | `mask-from-markers` | `mask-from-markers --markers markers.json --like in.png --out mask.png [--radius 0.03]` | `--like <图>` 或 `--size WxH`（二选一，必需）；`--radius`（0.03，圆半径 = `max(8, min(w,h)×radius)`） | 标记 JSON → 黑底白圆的圆形掩码 PNG |
+| `local-edit` | `local-edit --image in.png --markers markers.json --prompt "..." --out out.png [--radius 0.12] [--padding 0.6] [--highlight overlay\|none]` | `--radius`（0.12，标记半径 = `min(w,h)×radius`）；`--padding`（0.6，裁剪区外扩比例，短边至少 768px）；`--highlight`（overlay 涂红 / none 不给高亮） | 底图 + 标记 → 只改标记处的整图（**推荐用于「换/加某个细节」**） |
 | `manifest` | `manifest --manifest edit.json --out-dir out [--generate] [--size 1:1] [--prompt "..."]` | `--manifest` 可给**文件路径或直接粘 JSON 字符串**；`--image-dir`（inline JSON 时的附件目录，默认 cwd）；`--out-dir`（默认 `<manifest 所在目录>/edited`）；`--size`/`--mode`/`--quality`；`--generate`；`--provider` | manifest → `01-resized.png` / `02-bg-removed.png` / `03-erased.png` + `base` 路径 + `markers` + `steps` |
 
 标记文件格式（`markers.json`，`x`/`y` 为**归一化坐标**）：
@@ -135,6 +136,19 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 | 无 mask 通道（兜底） | 无掩码参数 | `overlayMaskRaster(image, mask, alpha=0.45)` 把涂抹区**涂红半透明**做成参考图，走整体 i2i，prompt 明确「只改红色高亮区，其余像素/构图/颜色/文字完全不变，不要保留高亮本身」 | 红色高亮 = 要改的区域 |
 
 > 一句话：**白=要处理 → wanx 直接可用 / OpenAI 转 alpha=0 / 都没有就涂红走 i2i。** 掩码与基底**必须同尺寸**，否则先 `resize` 掩码（改动尺寸会让标记与涂抹区域一起失配，慎用）。
+
+### 局部细节修改：优先 `local-edit`（两道守边）
+
+标记只给「位置 + 改法」，要改成「只动这一处、别处一像素不变」时用 `local-edit`：
+
+1. 按标记半径 + `--padding` 裁出一块局部放大图（短边 ≥768px，让模型有足够像素与上下文）；
+2. 在这块裁剪图上做局部重绘（`erase` 的通道链，或 `--highlight none` 把裁剪图直接交给模型并说明「目标在本图正中心」）；
+3. **两道守边**：补丁 → 裁剪图（只取掩码圆内），裁剪图 → 原图（整块贴回）。结果里裁剪框与掩码之外的像素与原图**逐字节一致**；
+4. 结果里给出 `changedRatio`（掩码内改动比例）。**< 5% 会打 ⚠️ 警告**，说明模型没按要求改（典型原因：通道把上传的参考图当成了结果、或需要走掩码通道）。
+
+实测经验（1774×887 角色设定图，面部加金链）：`--highlight none` + 局部放大图比涂红高亮更可靠——涂红的圆形高亮容易被模型当成「内容」画进结果，而**局部放大图 + 裁剪框本身就传达了位置**；`--highlight overlay` 更适合「抹掉某物」这类需要明确边界的诉求。
+
+> ⚠️ **通道返回原图 = 失败**：`generate_image.mjs` 的网页通道曾经按「页面里最后一张 >200px 的图」取结果，会把**自己上传的参考图**当成生成结果（图生图静默返回原图）。现已按回合 role 排除用户上传图、只取助手回合的图；`edit_image.mjs` 另外硬校验「生成结果与输入逐字节相同 → 直接判失败并报错」，不允许静默返回原图。
 
 ---
 

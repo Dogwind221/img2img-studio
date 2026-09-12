@@ -15,13 +15,14 @@
  *   node scripts/edit_image.mjs erase --image in.png --mask mask.png --prompt "抹掉并补背景" --out out.png [--provider auto|dashscope|openai|i2i]
  *   node scripts/edit_image.mjs markers --image in.png --markers markers.json --out marked.png
  *   node scripts/edit_image.mjs mask-from-markers --markers markers.json --like in.png --out mask.png [--radius 0.03]
+ *   node scripts/edit_image.mjs local-edit --image in.png --markers markers.json --prompt "..." --out out.png [--radius 0.12] [--padding 0.6] [--highlight overlay|none]
  *   node scripts/edit_image.mjs manifest --manifest edit.json --out-dir out [--generate] [--size 1:1] [--prompt "整体风格..."]
  *
  * 输入输出都是 PNG（面板导出即 PNG）；JPEG 只读尺寸，需要先转 PNG。
  * 本脚本不派生任何解释器进程（DSH 文件沙箱禁止管道 stdio 与从 Node 派生 pwsh），
- * 本地像素操作全部在进程内完成（scripts/edit/）；仅有的两处子进程是复用同目录的
- * Node 脚本（erase 的 i2i 兜底与 manifest --generate 调 generate_image.mjs），用
- * 沙箱允许的 inherit stdio。云端通道：
+ * 本地像素操作全部在进程内完成（scripts/edit/）；仅有的子进程是复用同目录的 Node 脚本
+ * （erase 的 i2i 兜底、local-edit、manifest --generate 调 generate_image.mjs），
+ * stdout 重定向到文件（沙箱禁止管道 stdio）。云端通道：
  *   - 局部重绘/擦除：DashScope wanx2.1-imageedit（异步，0.14 元/张，免费额度 500 张）
  *   - 抠图（透明 PNG）：OpenAI 兼容 images/edits（background=transparent）
  *   - 兜底：本地纯色背景抠图 / 把涂抹区域涂红后走整体 i2i
@@ -33,8 +34,8 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { probeSize } from "./edit/png.mjs";
 import {
-  binarizeRaster, compositeWithMask, cutoutRaster, drawMarkerPins, maskFromMarkers, maskToAlphaRaster,
-  overlayMaskRaster, readRaster, resizeRaster, writePng,
+  binarizeRaster, compositePatch, compositeWithMask, cropRect, cutoutRaster, drawMarkerPins,
+  maskFromMarkers, maskToAlphaRaster, overlayMaskRaster, readRaster, resizeRaster, writePng,
 } from "./edit/raster.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -69,7 +70,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function parseArgs(argv) {
   const a = {
     op: "", image: "", mask: "", markers: "", manifest: "", out: "", outDir: "", imageDir: "",
-    size: "", mode: "cover", provider: "auto", prompt: "", tolerance: 36, radius: 0.03,
+    size: "", mode: "cover", provider: "auto", prompt: "", tolerance: 36, radius: 0.03, padding: 0.6, highlight: "overlay",
     threshold: 128, like: "", generate: false, json: false, help: false, quality: "normal",
   };
   const next = (i) => (i + 1 < argv.length ? argv[++i] : "");
@@ -89,6 +90,8 @@ function parseArgs(argv) {
       case "--prompt": case "-p": a.prompt = next(i); break;
       case "--tolerance": a.tolerance = parseInt(next(i), 10) || 36; break;
       case "--radius": a.radius = parseFloat(next(i)) || 0.03; break;
+      case "--padding": a.padding = parseFloat(next(i)) || 0.6; break;
+      case "--highlight": a.highlight = (next(i) || "overlay").toLowerCase(); break;
       case "--threshold": a.threshold = parseInt(next(i), 10) || 128; break;
       case "--like": a.like = next(i); break;
       case "--quality": a.quality = (next(i) || "normal").toLowerCase(); break;
@@ -146,8 +149,15 @@ function imageSize(file) {
   return probeSize(fs.readFileSync(abs));
 }
 
+/** 读 JSON 文件：容忍 PowerShell `Set-Content` 写的 UTF-8 BOM 与 CRLF。 */
+function readJsonFile(file) {
+  const abs = path.resolve(file);
+  if (!fs.existsSync(abs)) fail(`文件不存在: ${abs}`);
+  return JSON.parse(fs.readFileSync(abs, "utf8").replace(/^\uFEFF/, "").trim());
+}
+
 function parseMarkers(file) {
-  const raw = JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
+  const raw = readJsonFile(file);
   const list = Array.isArray(raw) ? raw : (raw?.markers ?? []);
   return list.map((m, index) => ({
     id: Number.isFinite(m?.id) ? m.id : index + 1,
@@ -184,6 +194,50 @@ async function requestJson(url, opts = {}, timeoutMs = 180000) {
 function tempPng(raster, name) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "img2img-edit-"));
   return writePng(path.join(dir, name), raster);
+}
+
+/**
+ * 调一次 generate_image.mjs（i2i），把第一张产物复制到 targetOut。
+ *
+ * stdout/stderr 重定向到文件而不是管道：DSH 沙箱禁止管道 stdio（EPERM），
+ * 重定向到文件在两种沙箱模式下都能用，还能顺便从 --json 输出里读出真实通道。
+ */
+function runGenerateImage(prompt, imagePath, targetOut) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "img2img-gen-"));
+  const logFile = path.join(scratch, "run.log");
+  const fd = fs.openSync(logFile, "w");
+  let status = -1;
+  try {
+    const args = [
+      path.join(__dirname, "generate_image.mjs"), "--prompt", prompt, "--output-dir", scratch, "--json",
+      ...(imagePath ? ["--image", path.resolve(imagePath)] : []),
+    ];
+    const res = spawnSync(process.execPath, args, { stdio: ["ignore", fd, fd] });
+    status = res.status ?? -1;
+  } finally { fs.closeSync(fd); }
+  const log = fs.readFileSync(logFile, "utf8");
+  if (status !== 0) {
+    const tail = log.split(/\r?\n/).filter((line) => line.trim() !== "").slice(-6).join(" | ");
+    throw new Error(`generate_image.mjs 退出码 ${status}：${tail.slice(0, 400)}`);
+  }
+  let parsed = null;
+  const start = log.indexOf("{");
+  if (start >= 0) { try { parsed = JSON.parse(log.slice(start)); } catch { parsed = null; } }
+  const reported = Array.isArray(parsed?.files) ? parsed.files.filter((file) => fs.existsSync(file)) : [];
+  const files = reported.length > 0
+    ? reported
+    : fs.readdirSync(scratch).filter((file) => /\.(png|jpe?g|webp)$/i.test(file)).map((file) => path.join(scratch, file));
+  if (files.length === 0) throw new Error("generate_image.mjs 没有产出图片");
+  // 图生图返回原图 = 模型没出图（网页通道曾把上传的参考图当结果）
+  if (imagePath && fs.readFileSync(files[0]).equals(fs.readFileSync(path.resolve(imagePath)))) {
+    throw new Error(`通道 ${parsed?.provider ?? "?"} 返回的图片与输入完全相同（模型没有出图）：请换通道或改写 prompt`);
+  }
+  if (targetOut) {
+    const target = path.resolve(targetOut);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(files[0], target);
+  }
+  return { files, provider: parsed?.provider ?? "unknown", model: parsed?.model, size: parsed?.size, log: logFile };
 }
 
 /* ---------- 供应商凭据 ---------- */
@@ -335,28 +389,23 @@ async function eraseViaOpenAI(a, maskPath) {
 /** 无掩码通道的兜底：把涂抹区域涂红做成参考图，走整体 i2i，再用掩码合成守住未涂抹区域。 */
 function eraseViaI2i(a, overlay, binaryMask) {
   const out = path.resolve(a.out);
-  const scratch = path.join(path.dirname(out), `_i2i-${Date.now()}`);
-  fs.mkdirSync(scratch, { recursive: true });
   const prompt = [
     `把图中被红色半透明高亮覆盖的区域改成干净的背景：${a.prompt || "抹掉该区域的内容，用周围背景自然填补"}。`,
     "高亮区域必须与周围背景无缝衔接，不要在其中画任何新物体、色块或圆形；高亮区域之外的所有像素保持不变。",
   ].join("");
-  const res = spawnSync(process.execPath, [
-    path.join(__dirname, "generate_image.mjs"), "--prompt", prompt, "--image", overlay, "--output-dir", scratch,
-  ], { stdio: "inherit" });
-  if (res.status !== 0) throw new Error("兜底 i2i 通道失败（generate_image.mjs 非 0 退出）");
-  const produced = fs.readdirSync(scratch).filter((f) => /\.(png|jpe?g|webp)$/i.test(f)).map((f) => path.join(scratch, f));
-  if (!produced.length) throw new Error("兜底 i2i 通道没有产出图片");
+  const generated = runGenerateImage(prompt, overlay, null);
   // 安全网：只有掩码内的像素采用生成结果，掩码外一律回贴原图（模型漂移不再污染整图）
   try {
     const base = readRaster(a.image);
-    const generated = readRaster(produced[0]);
     const mask = readRaster(binaryMask);
-    writePng(out, compositeWithMask(base, generated, mask));
-    return { provider: "i2i", out, overlay, source: produced[0], composited: true };
+    writePng(out, compositeWithMask(base, readRaster(generated.files[0]), mask));
+    return { provider: generated.provider, model: generated.model, out, overlay, source: generated.files[0], composited: true };
   } catch (error) {
-    fs.copyFileSync(produced[0], out);
-    return { provider: "i2i", out, overlay, source: produced[0], composited: false, note: `结果未能按掩码合成（${error.message}），已直接采用生成图` };
+    fs.copyFileSync(generated.files[0], out);
+    return {
+      provider: generated.provider, out, overlay, source: generated.files[0], composited: false,
+      note: `结果未能按掩码合成（${error.message}），已直接采用生成图`,
+    };
   }
 }
 
@@ -391,13 +440,94 @@ async function opErase(a) {
   fail(`erase 全部通道失败:\n${attempts.map((x) => `  - ${x.provider}: ${x.error}`).join("\n")}`);
 }
 
+/* ---------- op: local-edit（按标记裁剪 → 局部重绘 → 守边贴回） ---------- */
+async function opLocalEdit(a) {
+  if (!a.image || !a.markers || !a.out) fail("local-edit 需要 --image --markers --out");
+  const markers = parseMarkers(a.markers);
+  if (markers.length === 0) fail("local-edit 需要至少一个标记");
+  const base = readRaster(a.image);
+  const minDim = Math.min(base.width, base.height);
+  const radius = (a.radius > 0 ? a.radius : 0.12) * minDim;
+  const padding = a.padding > 0 ? a.padding : 0.6;
+
+  // 标记包围盒 → 外扩成一块上下文足够的裁剪区（模型需要看到周边面料/光线）
+  let minX = Infinity; let minY = Infinity; let maxX = -Infinity; let maxY = -Infinity;
+  for (const marker of markers) {
+    const cx = marker.x * base.width;
+    const cy = marker.y * base.height;
+    minX = Math.min(minX, cx - radius); maxX = Math.max(maxX, cx + radius);
+    minY = Math.min(minY, cy - radius); maxY = Math.max(maxY, cy + radius);
+  }
+  const wanted = Math.max(768, Math.round(Math.max(maxX - minX, maxY - minY) * (1 + padding)));
+  const width = Math.min(base.width, wanted);
+  const height = Math.min(base.height, wanted);
+  const crop = cropRect(base, (minX + maxX) / 2 - width / 2, (minY + maxY) / 2 - height / 2, width, height);
+
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "img2img-local-"));
+  const cropPath = writePng(path.join(work, "crop.png"), crop.raster);
+  const cropMarkers = markers.map((marker) => ({
+    id: marker.id,
+    x: (marker.x * base.width - crop.x) / crop.width,
+    y: (marker.y * base.height - crop.y) / crop.height,
+    text: marker.text,
+  }));
+  const cropMask = maskFromMarkers(crop.width, crop.height, cropMarkers, radius / Math.min(crop.width, crop.height));
+  const cropMaskPath = writePng(path.join(work, "crop-mask.png"), cropMask);
+  const patchPath = path.join(work, "patch.png");
+  const markerText = markers.map((marker) => marker.text).filter(Boolean).join("；");
+  const prompt = [
+    a.prompt || markerText || "按高亮区域的要求重绘这一小块",
+    a.highlight === "none"
+      ? "这是从整图裁下的一小块局部放大图，目标位置就在本图正中心；只改中心这一处，周围的面料质感、刺绣纹样、光线方向与褶皱必须完全保持一致。"
+      : "这是从整图裁下的一小块（局部放大图），只修改红色高亮圈出的位置；周围的面料质感、刺绣纹样、光线方向与褶皱必须完全保持一致；不要画出红色标记本身。",
+  ].join("");
+  const erase = a.highlight === "none"
+    // 不给高亮：直接把裁剪图交给模型（局部放大图 + 「目标在正中心」），避免红色被画进结果
+    ? (() => {
+      const generated = runGenerateImage(prompt, cropPath, patchPath);
+      return { provider: generated.provider, model: generated.model, attempts: [] };
+    })()
+    : await opErase({
+      image: cropPath, mask: cropMaskPath, out: patchPath, prompt,
+      provider: a.provider, threshold: a.threshold,
+    });
+  // 两道守边：补丁 → 裁剪图（掩码内），裁剪图 → 原图（整块贴回）
+  const patched = compositePatch(crop.raster, readRaster(patchPath), 0, 0, cropMask);
+  const out = writePng(a.out, compositePatch(base, patched, crop.x, crop.y, null));
+  // 诊断：掩码内到底改了多少（模型没动 / 只把高亮留在图里时一眼看出来）
+  let changed = 0;
+  let inside = 0;
+  for (let index = 0; index < cropMask.width * cropMask.height; index++) {
+    const i = index * 4;
+    if (cropMask.data[i] < 128) continue;
+    inside++;
+    if (Math.abs(patched.data[i] - crop.raster.data[i]) > 12) changed++;
+  }
+  const changedRatio = inside === 0 ? 0 : Number((changed / inside).toFixed(3));
+  return {
+    op: "local-edit",
+    out,
+    provider: erase.provider,
+    crop: { x: crop.x, y: crop.y, width: crop.width, height: crop.height },
+    radiusPx: Math.round(radius),
+    patch: patchPath,
+    changedRatio,
+    attempts: erase.attempts,
+    note: changedRatio < 0.05
+      ? "⚠️ 掩码内几乎没变化：模型可能没按要求改（换 --highlight overlay，或修好 DashScope key 走掩码通道）"
+      : "已按掩码守边贴回：裁剪框与掩码以外的像素与原图完全一致",
+  };
+}
+
 /* ---------- op: manifest（面板交回的编辑请求） ---------- */
 async function opManifest(a) {
   if (!a.manifest) fail("manifest 需要 --manifest <edit.json | JSON 字符串>");
   const inline = a.manifest.trim().startsWith("{");
   const manifestPath = inline ? "" : path.resolve(a.manifest);
   if (!inline && !fs.existsSync(manifestPath)) fail(`manifest 不存在: ${manifestPath}`);
-  const manifest = inline ? JSON.parse(a.manifest) : JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  const manifest = inline
+    ? JSON.parse(a.manifest.replace(/^\uFEFF/, "").trim())
+    : readJsonFile(manifestPath);
   const manifestDir = inline ? path.resolve(a.imageDir || process.cwd()) : path.dirname(manifestPath);
   const workDir = path.resolve(a.outDir || path.join(manifestDir, "edited"));
   fs.mkdirSync(workDir, { recursive: true });
@@ -454,11 +584,12 @@ async function opManifest(a) {
       .join("；");
     const prompt = [a.prompt, markerText ? `按标记修改：${markerText}。标记只作位置指引，不要出现在成图里。` : ""]
       .filter(Boolean).join(" ");
-    const res = spawnSync(process.execPath, [
-      path.join(__dirname, "generate_image.mjs"), "--prompt", prompt, "--image", current, "--output-dir", scratch,
-    ], { stdio: "inherit" });
-    if (res.status === 0 && fs.existsSync(scratch)) {
-      result.generated = fs.readdirSync(scratch).map((f) => path.join(scratch, f));
+    try {
+      const generated = runGenerateImage(prompt, current, null);
+      result.generated = generated.files;
+      result.provider = generated.provider;
+    } catch (error) {
+      result.generateError = error.message;
     }
   }
   return result;
@@ -474,10 +605,12 @@ const USAGE = `img2img-studio edit_image.mjs v${VERSION}
   node scripts/edit_image.mjs erase --image in.png --mask mask.png --prompt "..." --out out.png [--provider auto|dashscope|openai|i2i]
   node scripts/edit_image.mjs markers --image in.png --markers markers.json --out marked.png
   node scripts/edit_image.mjs mask-from-markers --markers markers.json --like in.png --out mask.png [--radius 0.03]
+  node scripts/edit_image.mjs local-edit --image in.png --markers markers.json --prompt "..." --out out.png [--radius 0.12] [--padding 0.6] [--highlight overlay|none]
   node scripts/edit_image.mjs manifest --manifest edit.json --out-dir out [--generate] [--size 1:1] [--prompt "..."]
 
 掩码语义: 面板/涂抹掩码 白(255)=要处理区域 → wanx 直接可用；OpenAI 需 alpha=0（脚本自动转）。
-标记文件: [{"id":1,"x":0.5,"y":0.47,"text":"把这里换成..."}]（x/y 为归一化坐标）。`;
+标记文件: [{"id":1,"x":0.5,"y":0.47,"text":"把这里换成..."}]（x/y 为归一化坐标）。
+local-edit: 按标记裁一块局部放大图 → 局部重绘 → 按掩码守边贴回（裁剪框与掩码外像素与原图一致）。`;
 
 async function main() {
   const a = parseArgs(process.argv.slice(2));
@@ -490,6 +623,9 @@ async function main() {
   const emit = (result) => {
     if (JSON_MODE) { console.log(JSON.stringify(result, null, 2)); return; }
     console.log(`OK: ${result.op} → ${result.out || result.base || result.image || ""}`);
+    if (result.op === "info") console.log(`  尺寸: ${result.width}×${result.height} (${result.format})`);
+    if (result.crop) console.log(`  裁剪区: ${result.crop.width}×${result.crop.height} @ (${result.crop.x},${result.crop.y})  标记半径 ${result.radiusPx}px`);
+    if (result.changedRatio !== undefined) console.log(`  掩码内改动比例: ${(result.changedRatio * 100).toFixed(1)}%`);
     if (result.provider) console.log(`  通道: ${result.provider}${result.model ? ` (${result.model})` : ""}`);
     if (result.note) console.log(`  说明: ${result.note}`);
     if (result.maskSemantics) console.log(`  掩码语义: ${result.maskSemantics}`);
@@ -505,6 +641,7 @@ async function main() {
     case "erase": emit(await opErase(a)); break;
     case "markers": emit(opMarkers(a)); break;
     case "mask-from-markers": emit(opMaskFromMarkers(a)); break;
+    case "local-edit": emit(await opLocalEdit(a)); break;
     case "manifest": emit(await opManifest(a)); break;
     default: fail(`未知 op: ${a.op}\n\n${USAGE}`);
   }
