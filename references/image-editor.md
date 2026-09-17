@@ -1,6 +1,6 @@
 # GUI 图像编辑模式（image-editor）
 
-来源：**dsh-img2img-editor** 面板（输入框 dock 里的「标记·编辑」）+ 本技能 `scripts/edit_image.mjs`。
+来源：**dsh-img2img-config** 面板（输入框 dock 里的「图片编辑」）+ 本技能 `scripts/edit_image.mjs`。
 一句话：用户在**输入框里**对图片做「标记 / 抠图 / 涂抹擦除 / 改尺寸」，点「放回输入框」后，编辑结果作为附件回到输入框，并附一段机器可读的**编辑请求块**；agent 读块 → 落地 → 交给生图供应商。
 
 适合：局部改图（换掉某处的物件/文字/颜色）、去背景出透明 PNG、涂抹擦除多余元素、改画幅尺寸后再出图。
@@ -17,8 +17,8 @@
 | 用户动作 ② | **移除背景**：面板内先给本地纯色背景预览（勾选即 `bgRemove.requested=true`） |
 | 用户动作 ③ | **涂抹擦除**：笔刷涂抹要处理的区域（涂抹 / 擦回 / 撤销一笔 / 全部清除），并填「涂抹区域要怎么处理」 |
 | 用户动作 ④ | **调整大小**：`cover` 裁切填满 / `contain` 完整放入 / `stretch` 拉伸变形（改尺寸会同时缩放标记与涂抹区域） |
-| 交付动作 | 点 **「放回输入框」** → 导出图片作为**新附件**回填输入框（替换被编辑的原图草稿）+ 把说明块写进草稿（重复编辑时**替换**旧块，不叠加） |
-| agent 拿到什么 | ① 附件（PNG）② `<!-- img2img-editor:begin --> … <!-- img2img-editor:end -->` 块：附件清单 + 标记坐标 + 请求动作 + `JSON:` manifest 一行 |
+| 交付动作 | 点 **「放回输入框」** → 导出图片与 `img2img-manifest.json` 作为**新附件**回填输入框（替换被编辑的原图草稿）+ 输入框里只多出**一个胶囊**「图片编辑 · N 处标记」。JSON 不写进输入框正文：胶囊载荷在**发送那一刻**展开成下面的说明块（所以模型看到的与旧版一致）。胶囊插不进去时退化为正文里一段 `[img2img] … [/img2img]` 文本块（同样内容但不含 `JSON:` 行，重复编辑整块替换） |
+| agent 拿到什么 | ① 附件（PNG + `img2img-manifest.json`）② 说明块：附件清单 + 标记坐标 + 请求动作 + `JSON:` manifest 一行（旧版客户端写 `<!-- img2img-editor:begin --> … end`，新版胶囊展开后首行是 `[img2img] 图片编辑请求 · img2img-studio`，其余相同） |
 
 ### 面板导出的文件（附件清单语义）
 
@@ -27,24 +27,24 @@
 | `edited-<stamp>.png` | 总是 | **编辑后的底图**（已应用改尺寸 + 抠图，**无**标记）——出图用这张作基底 |
 | `marked-<stamp>.png` | 有标记时 | 带编号标记的位置图（**只用于指示位置，不要画进成图**） |
 | `mask-<stamp>.png` | 有涂抹时 | 涂抹掩码：**白色 = 要处理/重绘的区域，黑色 = 保留** |
+| `img2img-manifest.json` | 总是 | manifest 原样 JSON 文件（与说明块里 `JSON:` 行等价，字段以下同） |
 
 > `<stamp>` 是 `Date.now().toString(36)`，例如 `edited-m1abcd2x.png`。
 
 ### 编辑请求块（示例）
 
 ```text
-<!-- img2img-editor:begin -->
-【图片编辑请求 · img2img-studio】
+[img2img] 图片编辑请求 · img2img-studio
 附件1 marked-m1abcd2x.png：带编号标记的位置图（标记只用于指示位置，不要画进成图）
 附件2 edited-m1abcd2x.png：编辑后的底图（1024×1024，出图用这张作基底）
 附件3 mask-m1abcd2x.png：涂抹掩码（白色 = 要处理/重绘的区域，黑色 = 保留）
+附件4 img2img-manifest.json：机器可读清单（标记坐标 / 尺寸 / 涂抹 / 文件清单），结构化字段以它为准
 标记修改点（坐标为归一化百分比，原点左上角）：
   1. (x 50.0%, y 47.0%) 把这块的花换成玫瑰
   2. (x 12.3%, y 80.1%) 删掉这行字
 请求动作：移除背景（云端抠图，输出透明 PNG）；涂抹擦除/局部重绘 2 笔：抹掉并补背景；调整大小到 1024×1024（裁切填满）
 给生图供应商：按标记与掩码做局部重绘，再做整体 i2i；标记与掩码只用于定位，不要出现在成图里。
 JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"height":1200},"size":{"width":1024,"height":1024,"mode":"cover","changed":true},"bgRemove":{"requested":true,"localPreview":true,"tolerance":36},"erase":{"strokes":2,"prompt":"抹掉并补背景"},"markers":[{"id":1,"x":0.5,"y":0.47,"text":"把这块的花换成玫瑰"}],"files":{"edited":"edited-m1abcd2x.png","marked":"marked-m1abcd2x.png","mask":"mask-m1abcd2x.png"}}
-<!-- img2img-editor:end -->
 ```
 
 ### manifest 字段（`JSON:` 那行）
@@ -67,7 +67,7 @@ JSON: {"version":1,"createdAt":"...","source":{"name":"in.jpg","width":1600,"hei
 **收到编辑请求块时，先读附件、再动手。** 顺序固定：
 
 1. **读附件**：用 `read_image` 逐张看（多模态模型）；纯文本模型走 `..\dsh-vision-skill\scripts\vision.js`。至少确认：底图内容、标记位置（`marked-*.png`）、涂抹区域（`mask-*.png`）是否与块里描述一致。**不要凭块内文字想象图片内容。**
-2. **取 manifest**：从块里 `JSON: ` 开头那一行解析出 JSON（块里也把它拆成了可读文本，两条信息等价；以 `JSON:` 行为准）。
+2. **取 manifest**：优先读附件 `img2img-manifest.json`（原样 JSON）；没有该附件时，从说明块里 `JSON: ` 开头那一行解析（块里也把它拆成了可读文本，两条信息等价；以 JSON 为准）。
 3. **收拢附件到一个目录，文件名必须与 `files.*` 完全一致**：manifest 是按 `path.join(manifestDir, files.edited)` 拼路径的。若附件落在对象目录里（名字是 sha256 hex，不是 `edited-*.png`），**先把它们按 `files.*` 的名字复制/重命名到一个工作目录**。
 4. **落地编辑**：
    ```powershell
@@ -223,19 +223,21 @@ node "scripts\edit_image.mjs" local-edit --image base.png --markers m.json --hig
 
 ## 面板安装 / 注入
 
-插件目录：`plugins/dsh-img2img-editor/`（`@dsh-external/dsh-img2img-editor`）。
+插件目录：`plugins/dsh-img2img-config/`（包名 `dsh-img2img-config`）。
+它是**一个包两个面**：本文档讲的输入框「图片编辑」dock，以及设置页「识图与生图」供应商面板
+（后者见 `SKILL.md` 的「配置」一节）。装一次两个面都有。
 
 ```powershell
-# 1) 构建：探测 dsh checkout → 链接构建期依赖 → tsc 编译 host → tsdown 打包 client
-node "plugins\dsh-img2img-editor\scripts\build.mjs"
+# 1) 构建：探测 dsh checkout → 链接构建期依赖 → tsc 编译 host → tsdown 打包 client → banner 归一化
+node "plugins\dsh-img2img-config\scripts\build.mjs"
 #   （bash 可用时等价：DSH_CHECKOUT=<checkout> bash scripts/build.sh）
 
-# 2) 注入（dsh-super-injector 运行时装配，免重启）
-#   dev_inject_plugin F:/dsh/img2img-studio/plugins/dsh-img2img-editor
+# 2) 装配（dsh-super-injector 运行时热装配，免重启；重启后由 profile bundles 接管）
+#   dev_install_package F:/dsh/img2img-studio/plugins/dsh-img2img-config
 ```
 
-- 只注册 **一个** UI 挂载点：`ctx.slots.inject('conversation.input.dock', ...)`（`id: 'img2img-editor'`，`order: 20`，`inject: ['slots','locale']`）。
-- **不注册 host 工具、不注册路由、不注册服务**：host 半边 `src/index.ts` 的 `apply()` 是空的（只为了让 bundle 插件有个 Loader 入口）。
+- 编辑器只注册 **一个** UI 挂载点：`ctx.slots.inject('conversation.input.dock', ...)`（`id: 'img2img-editor'`，`order: 20`，`inject: ['slots','locale']`）。
+- 设置面板另外注册 **一个** `settings.section`（`id: 'img2img-config'`，`order: 60`），挂在 host 半边的 `/dsh-img2img-config/{providers,probe,chatgpt-usage}` 三条路由上。
 - 输入框没有图片时 dock 整条不渲染；回填失败（输入框忙 / 图片失效）会显示提示而不是崩。
 
 ---

@@ -8,7 +8,7 @@ export const zh: Record<string, string> = {
   'dock.title': '图片编辑',
   'dock.edit': '标记·编辑',
   'dock.hint': '点缩略图打开编辑器：加编号标记 / 移除背景 / 涂抹擦除 / 调整大小',
-  'dock.done': '已放回输入框：编辑图 + 说明，发送即可出图',
+  'dock.done': '已放回输入框：编辑图 + 清单附件 + 一个说明胶囊，发送即可出图',
   'dock.fail': '回填失败：输入框正忙或图片已失效，请重试',
   'editor.title': '图片编辑',
   'editor.cancel': '取消',
@@ -41,6 +41,12 @@ export const zh: Record<string, string> = {
   'editor.sizeContain': '完整放入（contain）',
   'editor.sizeStretch': '拉伸变形（stretch）',
   'editor.sizeHint': '改尺寸会同时缩放标记与涂抹区域；生图常用 1:1 / 3:4 / 16:9。',
+  'brief.title': '图片编辑',
+  'brief.markers': '处标记',
+  'brief.strokes': '笔涂抹',
+  'brief.bg': '移除背景',
+  'brief.plain': '仅底图',
+  'brief.manifest': 'img2img-manifest.json：机器可读清单（标记坐标 / 尺寸 / 涂抹 / 文件清单），结构化字段以它为准',
 }
 
 /** English dictionary. */
@@ -48,7 +54,7 @@ export const en: Record<string, string> = {
   'dock.title': 'Image editor',
   'dock.edit': 'Mark & edit',
   'dock.hint': 'Open the editor: numbered markers / background removal / brush erase / resize',
-  'dock.done': 'Sent back to the composer: edited image + brief. Press send to generate.',
+  'dock.done': 'Sent back to the composer: edited image + manifest attachment + one brief chip. Press send to generate.',
   'dock.fail': 'Could not stage the result: the composer is busy or the image is gone. Retry.',
   'editor.title': 'Image editor',
   'editor.cancel': 'Cancel',
@@ -81,4 +87,10 @@ export const en: Record<string, string> = {
   'editor.sizeContain': 'Fit inside (contain)',
   'editor.sizeStretch': 'Stretch',
   'editor.sizeHint': 'Resizing scales markers and brushed areas too; 1:1 / 3:4 / 16:9 are the usual generation frames.',
+  'brief.title': 'Image edit',
+  'brief.markers': 'markers',
+  'brief.strokes': 'strokes',
+  'brief.bg': 'background removal',
+  'brief.plain': 'base image only',
+  'brief.manifest': 'img2img-manifest.json: machine-readable manifest (marker coordinates / size / strokes / file list); structured fields follow it',
 }

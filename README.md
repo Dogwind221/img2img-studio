@@ -33,6 +33,36 @@ Copy-Item -Recurse -Force "img2img-studio" "$env:USERPROFILE\.agents\skills\"
 
 依赖：**Node.js 18+**（`generate_image.mjs` 本身零第三方依赖）。
 
+### 可选：装自带插件（设置面板 + 图片编辑器）
+
+技能本体（`SKILL.md` + `references/` + `scripts/`）纯命令行就能用，不装插件照样出图。
+想让 DSH 里出现 **设置 → 识图与生图** 供应商面板、以及输入框上方的 **图片编辑器**，
+再装仓库自带的 `plugins/dsh-img2img-config`：
+
+```powershell
+$plugin = "$env:USERPROFILE\.agents\skills\img2img-studio\plugins\dsh-img2img-config"
+
+# 1) 构建（宿主 tsc + 客户端 tsdown；Node 版脚本，沙箱里无需 bash）
+node "$plugin\scripts\build.mjs"
+
+# 2) 装配（免重启热装配；重启后由 profile 的 bundles 列表接管，双路径一致）
+#    有 dsh-super-injector 时用 dev_install_package；否则把包名加进 profile 的
+#    dsh.profile.bundles 数组并在 node_modules 下建同名 junction
+dev_install_package "$plugin"
+```
+
+一个包装两个面，都是一次安装就有：
+
+| 面 | 位置 | 作用 |
+|---|---|---|
+| 供应商面板 | 设置 → **识图与生图** | 配识图 + 生图的 API Key / 模型 / 端点 / 三级优先级 / 余额探测 / ChatGPT 网页账号额度 |
+| 图片编辑器 | 输入框上方的「图片编辑」条 | 对输入框里的图片做标记 / 抠图 / 涂抹擦除 / 改尺寸，结果回填输入框 |
+
+面板**保存即写回** `img2img-studio/scripts/.env`（`GEN_PROVIDER_ORDER`、各 `*_API_KEY`、
+`IMG_CHATGPT_WEB_ACCOUNTS`）与 `dsh-vision-skill/scripts/.env`（`VISION_PROVIDERS` 等）——
+两个 skill 只装一个也能用（写盘前会先把目标目录建出来）。细节见
+[`plugins/dsh-img2img-config/README.md`](plugins/dsh-img2img-config/README.md)。
+
 `dsh-vision-skill` 是**条件依赖，不是硬前置**——按你的情况看要不要装：
 
 | 你的情况 | 要不要 dsh-vision-skill | 原因 |
@@ -108,9 +138,16 @@ img2img-studio/
 │   ├── routing-gate.md           # 出图前询问：通道 + 风格 + 细化需求
 │   ├── photo-art-mode.md         # 照片艺术模式（editorial/revival/fusion/zine 三风格）
 │   ├── ecommerce-mode.md         # 电商模式（10 步管线：转化诊断/Style Lock/铁律/详情页）
-│   └── chatgpt-web-mode.md       # ChatGPT 网页出图工作流
+│   ├── chatgpt-web-mode.md       # ChatGPT 网页出图工作流
+│   ├── image-editor.md           # GUI 编辑器回填的编辑请求怎么落地（标记/掩码/擦除）
+│   └── direct-api-guide.md       # 直连引擎（12 家官方 API）的 DSH 适配
+├── engines/
+│   └── direct-api/               # 自有直连生图引擎（bun 运行 TS）
+├── plugins/
+│   └── dsh-img2img-config/       # DSH 插件：设置面板 + 图片编辑器（可选装，见「安装」）
 └── scripts/
     ├── generate_image.mjs        # 多供应商生图脚本（零依赖 Node）
+    ├── edit_image.mjs            # 图像编辑：manifest/resize/bg-remove/erase/local-edit
     └── .env.example              # 供应商配置示例
 ```
 

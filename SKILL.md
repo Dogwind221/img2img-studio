@@ -54,7 +54,7 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 ### 订阅制通道（一级主通道）的账号与凭据
 
-三个账号通道由 **Settings → 识图与生图** 面板统一管理（`dsh-vision-config`），面板保存时同步 `GEN_PROVIDER_ORDER` 与 `IMG_CHATGPT_WEB_ACCOUNTS` 到 `scripts/.env`：
+三个账号通道由 **Settings → 识图与生图** 面板统一管理（`dsh-img2img-config`），面板保存时同步 `GEN_PROVIDER_ORDER` 与 `IMG_CHATGPT_WEB_ACCOUNTS` 到 `scripts/.env`：
 
 | 通道 id | 账号 | 凭据来源 | 出图方式 |
 |---|---|---|---|
@@ -81,7 +81,7 @@ scripts/generate_image.mjs（多供应商自动降级）
 
 ## GUI 图像编辑（image-editor 模式）
 
-面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-editor` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸，点「放回输入框」后：编辑结果作为**附件**回到输入框，草稿里多出一段 `<!-- img2img-editor:begin --> … <!-- img2img-editor:end -->` 说明块（含附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest）。完整参考：`references/image-editor.md`。
+面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-config` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸，点「放回输入框」后：编辑结果与 `img2img-manifest.json` 作为**附件**回到输入框，输入框里只多出**一个胶囊**「图片编辑 · N 处标记」——JSON 不进正文，胶囊在发送时展开成说明块（附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest），模型看到的与旧版写块完全一致。胶囊插不进去时退化为正文里 `[img2img] … [/img2img]` 块（不含 `JSON:` 行，清单在附件里）。完整参考：`references/image-editor.md`。
 
 | 用户动作 | agent 动作 |
 |---|---|
@@ -211,7 +211,7 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 ```
 
 - **子通道**：`openai` / `azure` / `google` / `openrouter` / `dashscope` / `zai` / `minimax` / `jimeng` / `seedream` / `replicate` / `agnes` / `codex-cli`；默认取 `DIRECT_PROVIDER` 环境变量，其次 `dashscope`
-- **配置**：`~/.img2img-studio/direct-api/EXTEND.md`（已预置 dashscope + 质量/并发）；key 与 dsh-vision-config 面板/现有 .env 同源，`VISION_API_KEY` 会自动桥接为引擎的 `DASHSCOPE_API_KEY`
+- **配置**：`~/.img2img-studio/direct-api/EXTEND.md`（已预置 dashscope + 质量/并发）；key 与 dsh-img2img-config 面板/现有 .env 同源，`VISION_API_KEY` 会自动桥接为引擎的 `DASHSCOPE_API_KEY`
 - **何时用它**：用户指定 12 家官方 API 中的某个（尤其 Google/Azure/Replicate/即梦）、或需要更细的画幅/批量控制
 - 引擎自身文档：`engines/direct-api/GUIDE.md`（CLI、provider 差异、批量与并发、排障）；DSH 适配见 `references/direct-api-guide.md`
 - ⚠️ DashScope 账号欠费时 qwen-image 返回 400 Arrearage → 换子通道或充值
@@ -264,7 +264,9 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 
 ## 配置
 
-> **面板优先（DSH 0.1.3+）**：Web 端 **Settings → 识图与生图**（`dsh-vision-config` 插件）填各通道 API Key / 模型 / 端点，保存后自动同步到 `scripts/.env`（`GEN_PROVIDER_ORDER`、各 key、`VISION_PROVIDERS`），新会话生效；手动改文件会被面板下次保存覆盖。技能根目录可用 `DSH_SKILLS_DIR` 覆盖（默认 `~/.agents/skills`）。
+> **面板优先（DSH 0.1.3+）**：Web 端 **Settings → 识图与生图** 填各通道 API Key / 模型 / 端点 / 优先级，保存后自动同步到 `scripts/.env`（`GEN_PROVIDER_ORDER`、各 key、`IMG_CHATGPT_WEB_ACCOUNTS`）与 `..\dsh-vision-skill\scripts\.env`（`VISION_PROVIDERS` 等），新会话生效；手动改文件会被面板下次保存覆盖。技能根目录可用 `DSH_SKILLS_DIR` 覆盖（默认 `~/.agents/skills`）。
+>
+> 面板随本技能自带的插件 `plugins/dsh-img2img-config` 一起发布（同一个包还提供输入框里的「图片编辑」）——**装了技能再构建 + 装配这个插件就有面板**，构建与装配两步见 `README.md` 的「安装 → 可选：装自带插件」。技能本体不装插件也能纯命令行出图，只是没有 GUI 配置页。
 
 在 `scripts/.env` 或环境变量（脚本会自动回退读取 `..\dsh-vision-skill\scripts\.env` 的 `VISION_API_KEY`，所以**零配置也能用 DashScope 出图**）：
 

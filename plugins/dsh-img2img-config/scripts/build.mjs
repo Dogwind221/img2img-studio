@@ -65,6 +65,13 @@ if (checkout === '') {
 }
 console.log(`=== Linking build dependencies (checkout: ${checkout}) ===`)
 linkDir('@types/node', join(checkout, 'node_modules', '@types', 'node'))
+// The host half declares `name`/`apply(ctx: Context)`, so the cordis types must
+// resolve or every `ctx.*` call silently degrades to `any` (and the webServer
+// handler parameters lose their contextual types).
+linkDir(
+  '@deepseek-ai/cordis',
+  join(checkout, 'node_modules', '.pnpm', 'node_modules', '@deepseek-ai', 'cordis'),
+)
 const tsdown = findPnpm('tsdown@')
 if (tsdown !== '') linkDir('tsdown', join(tsdown, 'node_modules', 'tsdown'))
 const reactTypes = findPnpm('@types+react@18')
@@ -90,6 +97,11 @@ if (existsSync(join(root, 'node_modules', '@types', 'react'))) {
 const tsdownBin = join(root, 'node_modules', 'tsdown', 'dist', 'run.mjs')
 if (existsSync(tsdownBin)) {
   run(process.execPath, [tsdownBin], 'Bundling client half -> lib/client.js')
+  run(
+    process.execPath,
+    [join(root, 'scripts', 'normalize-client-banner.mjs')],
+    'Normalizing the client bundle banner',
+  )
 } else {
   console.log('build: tsdown unavailable; skipped lib/client.js')
 }

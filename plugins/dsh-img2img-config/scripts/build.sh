@@ -1,7 +1,7 @@
 #!/bin/bash
-# Build dsh-img2img-editor: compile the host half with the dsh checkout's tsc and
-# link the few build-time dependencies (types + the client bundler) from that
-# same checkout. Run `npm run build:client` (or dev_build_plugin) for lib/client.js.
+# Build dsh-img2img-config: compile the host half with the dsh checkout's tsc and
+# link the few build-time dependencies (types, cordis, the client bundler) from
+# that same checkout. Run `npm run build:client` (or dev_build_plugin) for lib/client.js.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,6 +47,10 @@ echo "=== Linking build dependencies (checkout: $CHECKOUT) ==="
 mkdir -p node_modules/@types
 link_dir @types/node "$CHECKOUT/node_modules/@types/node"
 
+# 宿主半边声明了 `apply(ctx: Context)`，cordis 类型必须能解析——否则 ctx.* 会
+# 静默退化成 any，webServer 的 handler 参数也丢掉上下文类型。
+link_dir @deepseek-ai/cordis "$CHECKOUT/node_modules/.pnpm/node_modules/@deepseek-ai/cordis"
+
 # tsdown + @types/react 只存在于 pnpm store 里（checkout 顶层没有直接链接）。
 find_pnpm() {
   find "$CHECKOUT/node_modules/.pnpm" -maxdepth 1 -type d -iname "$1" 2>/dev/null | head -1
@@ -72,6 +76,11 @@ echo "=== Compiling host half (src/index.ts) -> lib ==="
 if [ -d node_modules/@types/react ]; then
   echo "=== Typechecking client half (no emit) ==="
   "$TSC" -p tsconfig.client.json
+fi
+
+if [ -f lib/client.js ]; then
+  echo "=== Normalizing the client bundle banner ==="
+  node scripts/normalize-client-banner.mjs
 fi
 
 echo "=== Build complete ==="

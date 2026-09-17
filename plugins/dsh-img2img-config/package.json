@@ -1,7 +1,7 @@
 {
-  "name": "dsh-img2img-editor",
+  "name": "dsh-img2img-config",
   "version": "0.1.0",
-  "description": "img2img-studio 的 GUI 编辑入口：图片放进输入框后可加编号标记（每处一个输入框写改法）、移除背景、涂抹擦除、调整大小，编辑结果回填输入框交给生图供应商",
+  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小）；② 设置页「识图与生图」供应商面板（三级优先级、拖拽排序、余额探测、ChatGPT 网页账号库），保存即写回两个 skill 的 scripts/.env",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -25,7 +25,7 @@
   },
   "scripts": {
     "build": "bash scripts/build.sh",
-    "build:client": "tsdown",
+    "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json"
   },
   "exports": {
@@ -49,7 +49,9 @@
         "@deepseek-ai/dsh-client-locale",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-session"
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-theme"
       ],
       "platform": "web"
     }

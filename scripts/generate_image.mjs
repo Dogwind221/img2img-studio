@@ -275,7 +275,7 @@ function detectProviders() {
       : `已就绪；子通道: ${DIRECT_PROVIDERS.join(", ")}（当前默认 ${ENV.DIRECT_PROVIDER || "dashscope"}）`,
   });
 
-  // ChatGPT 网页账号通道（浏览器驱动；凭据来自 dsh-vision-config 面板）
+  // ChatGPT 网页账号通道（浏览器驱动；凭据来自 dsh-img2img-config 面板）
   const pwCore = loadPlaywrightCore();
   for (const acc of chatgptWebAccounts()) {
     const token = chatgptWebToken(acc.id);
@@ -714,9 +714,21 @@ function loadPlaywrightCore() {
   try { return requireFromHere('playwright-core') } catch { return null }
 }
 
-/** dsh-vision-config 的账号表路径（含网页账号的 session token）。 */
+/**
+ * 面板账号表路径（含网页账号的 session token）。
+ * 插件从 dsh-vision-config 合并进 dsh-img2img-config，账号库也跟着搬了家；
+ * 先认新目录，再回退旧目录（老用户机器上两份可能并存，旧的只剩搬迁前的快照）。
+ */
 function chatgptAccountsFile() {
-  return path.join(os.homedir(), '.dsh', 'dsh-vision-config', 'chatgpt-accounts.json');
+  const home = os.homedir();
+  const candidates = [
+    path.join(home, '.dsh', 'dsh-img2img-config', 'chatgpt-accounts.json'),
+    path.join(home, '.dsh', 'dsh-vision-config', 'chatgpt-accounts.json'),
+  ];
+  for (const file of candidates) {
+    try { if (fs.existsSync(file)) return file } catch { /* 继续 */ }
+  }
+  return candidates[0];
 }
 
 /** 读取面板账号库（含配额探测结果）；读不到/解析失败返回 []。 */
@@ -812,7 +824,7 @@ function chatgptWebToken(accountId) {
   } catch { return null }
 }
 
-/** 环境里可用的网页账号（来自 dsh-vision-config 同步的 IMG_CHATGPT_WEB_ACCOUNTS）。 */
+/** 环境里可用的网页账号（来自 dsh-img2img-config 同步的 IMG_CHATGPT_WEB_ACCOUNTS）。 */
 function chatgptWebAccounts() {
   return (ENV.IMG_CHATGPT_WEB_ACCOUNTS || '')
     .split(',')

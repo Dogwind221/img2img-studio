@@ -1,0 +1,5 @@
+# dsh bundle patch: inserts the img2img-studio plugin (composer image editor +
+# Settings → 识图与生图 provider panel) into a profile's layer stack.
+- insert:
+    - id: dsh-img2img-config
+      name: 'dsh-img2img-config'

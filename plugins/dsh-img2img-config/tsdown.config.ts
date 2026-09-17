@@ -1,6 +1,6 @@
 import type { UserConfig } from 'tsdown'
 
-const PLUGIN_ID = 'dsh-img2img-editor'
+const PLUGIN_ID = 'dsh-img2img-config'
 
 /**
  * React and the jsx runtime stay external: the web shell seeds both through the

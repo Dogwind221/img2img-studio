@@ -33,7 +33,7 @@ bun "engines\direct-api\scripts\main.ts" --prompt "..." --ar 16:9 --quality 2k -
 bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 ```
 
-## 12 家子通道 → key 来源（与 dsh-vision-config 面板/现有 .env 同源）
+## 12 家子通道 → key 来源（与 dsh-img2img-config 面板/现有 .env 同源）
 
 | 子通道 | 环境变量 | 面板条目 |
 |---|---|---|
