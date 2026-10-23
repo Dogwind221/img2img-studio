@@ -1,4 +1,4 @@
-﻿{
+{
     "name":  "dsh-img2img-config",
     "version":  "0.1.1",
     "description":  "DSH plugin: a composer image editor (numbered marks, background removal, brush-mask erase, resize and crop) plus a vision/generation provider panel that writes the resolved providers back to the skills\u0027 .env files.",

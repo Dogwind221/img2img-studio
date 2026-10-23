@@ -15,7 +15,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+const raw = readFileSync(join(ROOT, 'package.json'), 'utf8').replace(/^\uFEFF/, '');
+const pkg = JSON.parse(raw);
 const peers = pkg.peerDependencies ?? {};
 const names = Object.keys(peers);
 
