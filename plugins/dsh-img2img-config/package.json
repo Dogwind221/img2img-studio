@@ -1,83 +1,83 @@
-{
-  "name": "dsh-img2img-config",
-  "version": "0.1.0",
-  "description": "DSH plugin: a composer image editor (numbered marks, background removal, brush-mask erase, resize and crop) plus a vision/generation provider panel that writes the resolved providers back to the skills' .env files.",
-  "type": "module",
-  "main": "./lib/index.js",
-  "types": "./lib/types/index.d.ts",
-  "files": [
-    "lib",
-    "src",
-    "cordis.patch.yml",
-    "README.md",
-    "LICENSE"
-  ],
-  "license": "MIT",
-  "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc"
-  },
-  "devDependencies": {
-    "@types/node": "^24.13.3",
-    "@types/react": "^18.3.1",
-    "react": "^18.3.1",
-    "tsdown": "^0.22.14",
-    "typescript": "^5.9.0"
-  },
-  "scripts": {
-    "build": "bash scripts/build.sh",
-    "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
-    "test": "node scripts/check-peer-ranges.mjs && npm run typecheck",
-    "test:peer-ranges": "node scripts/check-peer-ranges.mjs"
-  },
-  "exports": {
-    ".": {
-      "types": "./lib/types/index.d.ts",
-      "default": "./lib/index.js"
-    },
-    "./client": {
-      "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.js"
-    },
-    "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
-  },
-  "dsh": {
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-ui-slots",
-        "@deepseek-ai/dsh-client-ui-conversation",
-        "@deepseek-ai/dsh-client-ui-session",
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-theme"
-      ],
-      "platform": "web"
-    }
-  },
-  "author": "Dogwind221",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Dogwind221/img2img-studio.git",
-    "directory": "plugins/dsh-img2img-config"
-  },
-  "homepage": "https://github.com/Dogwind221/img2img-studio/tree/main/plugins/dsh-img2img-config",
-  "keywords": [
-    "dsh-plugin",
-    "deepseek-harness",
-    "image-editor",
-    "vision",
-    "provider-config"
-  ],
-  "engines": {
-    "node": ">=20"
-  },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  }
+﻿{
+    "name":  "dsh-img2img-config",
+    "version":  "0.1.1",
+    "description":  "DSH plugin: a composer image editor (numbered marks, background removal, brush-mask erase, resize and crop) plus a vision/generation provider panel that writes the resolved providers back to the skills\u0027 .env files.",
+    "type":  "module",
+    "main":  "./lib/index.js",
+    "types":  "./lib/types/index.d.ts",
+    "files":  [
+                  "lib",
+                  "src",
+                  "cordis.patch.yml",
+                  "README.md",
+                  "LICENSE"
+              ],
+    "license":  "MIT",
+    "peerDependencies":  {
+                             "@deepseek-ai/cordis":  "\u003e=4.0.0-rc",
+                             "@deepseek-ai/dsh-client-ui-slots":  "\u003e=0.0.1-rc"
+                         },
+    "devDependencies":  {
+                            "@types/node":  "^24.13.3",
+                            "@types/react":  "^18.3.1",
+                            "react":  "^18.3.1",
+                            "tsdown":  "^0.22.14",
+                            "typescript":  "^5.9.0"
+                        },
+    "scripts":  {
+                    "build":  "bash scripts/build.sh",
+                    "build:client":  "tsdown \u0026\u0026 node scripts/normalize-client-banner.mjs",
+                    "typecheck":  "tsc -p tsconfig.json --noEmit \u0026\u0026 tsc -p tsconfig.client.json",
+                    "test":  "node scripts/check-peer-ranges.mjs \u0026\u0026 npm run typecheck",
+                    "test:peer-ranges":  "node scripts/check-peer-ranges.mjs"
+                },
+    "exports":  {
+                    ".":  {
+                              "types":  "./lib/types/index.d.ts",
+                              "default":  "./lib/index.js"
+                          },
+                    "./client":  {
+                                     "types":  "./lib/types/client/index.d.ts",
+                                     "default":  "./lib/client.js"
+                                 },
+                    "./cordis.patch.yml":  "./cordis.patch.yml",
+                    "./package.json":  "./package.json"
+                },
+    "dsh":  {
+                "bundle":  {
+                               "patch":  "./cordis.patch.yml"
+                           },
+                "client":  {
+                               "inject":  [
+                                              "@deepseek-ai/dsh-client-locale",
+                                              "@deepseek-ai/dsh-client-ui-slots",
+                                              "@deepseek-ai/dsh-client-ui-conversation",
+                                              "@deepseek-ai/dsh-client-ui-session",
+                                              "@deepseek-ai/dsh-client-ui-settings",
+                                              "@deepseek-ai/dsh-client-ui-theme"
+                                          ],
+                               "platform":  "web"
+                           }
+            },
+    "author":  "Dogwind221",
+    "repository":  {
+                       "type":  "git",
+                       "url":  "git+https://github.com/Dogwind221/img2img-studio.git",
+                       "directory":  "plugins/dsh-img2img-config"
+                   },
+    "homepage":  "https://github.com/Dogwind221/img2img-studio/tree/main/plugins/dsh-img2img-config",
+    "keywords":  [
+                     "dsh-plugin",
+                     "deepseek-harness",
+                     "image-editor",
+                     "vision",
+                     "provider-config"
+                 ],
+    "engines":  {
+                    "node":  "\u003e=20"
+                },
+    "publishConfig":  {
+                          "access":  "public",
+                          "provenance":  true
+                      }
 }
