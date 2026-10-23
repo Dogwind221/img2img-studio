@@ -1,15 +1,16 @@
 {
   "name": "dsh-img2img-config",
   "version": "0.1.0",
-  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小）；② 设置页「识图与生图」供应商面板（三级优先级、拖拽排序、余额探测、ChatGPT 网页账号库），保存即写回两个 skill 的 scripts/.env",
-  "private": true,
+  "description": "DSH plugin: a composer image editor (numbered marks, background removal, brush-mask erase, resize and crop) plus a vision/generation provider panel that writes the resolved providers back to the skills' .env files.",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
   "files": [
     "lib",
     "src",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
   ],
   "license": "MIT",
   "peerDependencies": {
@@ -55,5 +56,26 @@
       ],
       "platform": "web"
     }
+  },
+  "author": "Dogwind221",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dogwind221/img2img-studio.git",
+    "directory": "plugins/dsh-img2img-config"
+  },
+  "homepage": "https://github.com/Dogwind221/img2img-studio/tree/main/plugins/dsh-img2img-config",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "image-editor",
+    "vision",
+    "provider-config"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
