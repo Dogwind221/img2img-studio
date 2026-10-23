@@ -14,8 +14,8 @@
   ],
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc <2"
+    "@deepseek-ai/cordis": ">=4.0.0-rc",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
@@ -27,7 +27,9 @@
   "scripts": {
     "build": "bash scripts/build.sh",
     "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "test": "node scripts/check-peer-ranges.mjs && npm run typecheck",
+    "test:peer-ranges": "node scripts/check-peer-ranges.mjs"
   },
   "exports": {
     ".": {
