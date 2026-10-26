@@ -4,6 +4,14 @@
 
 面向 DeepSeek Harness / Claude Code / Codex 等 Agent 环境的可移植 Agent Skill。
 
+## 界面
+
+图片编辑器在输入框上方就地打开；下方是设置页里的「识图与生图」供应商面板（优先级、模型降级链、账号库）。
+
+![图片编辑器：编号标记、涂抹擦除、移除背景、比例与尺寸](assets/screenshots/composer-editor.png)
+
+![识图与生图供应商面板：三级优先级、模型链、ChatGPT 网页账号库](assets/screenshots/provider-panel.png)
+
 ## 架构
 
 ```
