@@ -33,14 +33,21 @@ const bad = (name, detail = "") => results.push({ pass: false, name, detail });
 const run = (cmd, argv, opts = {}) =>
   execFileSync(cmd, argv, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], ...opts }).trim();
 
+// 直接跑 npm CLI 的 JS 入口：Windows 下避免 .cmd 的 EINVAL 与 shell 拼接的 DEP0190
+const NPM_CLI = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+const npm = (argv, opts = {}) =>
+  fs.existsSync(NPM_CLI)
+    ? run(process.execPath, [NPM_CLI, ...argv], opts)
+    : run(process.platform === "win32" ? "npm.cmd" : "npm", argv, { ...opts, shell: process.platform === "win32" });
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "dsh-smoke-"));
 
 try {
   // 1) registry 元数据
-  const version = wantVersion || run("npm", ["view", PKG, "version", "--prefer-online"]);
+  const version = wantVersion || npm( ["view", PKG, "version", "--prefer-online"]);
   ok("registry 版本可解析", version);
 
-  const metaRaw = run("npm", ["view", `${PKG}@${version}`, "--json", "--prefer-online"]);
+  const metaRaw = npm( ["view", `${PKG}@${version}`, "--json", "--prefer-online"]);
   const meta = JSON.parse(metaRaw);
   ok("tarball 地址存在", meta.dist?.tarball ?? "");
 
@@ -87,7 +94,7 @@ try {
     const inst = path.join(tmp, "install");
     fs.mkdirSync(inst, { recursive: true });
     fs.writeFileSync(path.join(inst, "package.json"), JSON.stringify({ name: "smoke", private: true }));
-    run("npm", ["install", `${PKG}@${version}`, "--no-audit", "--no-fund", "--silent"], { cwd: inst });
+    npm( ["install", `${PKG}@${version}`, "--no-audit", "--no-fund", "--silent"], { cwd: inst });
     const mod = path.join(inst, "node_modules", PKG);
     for (const f of ["package.json", "cordis.patch.yml", "lib/index.js", "lib/client.js"]) {
       fs.existsSync(path.join(mod, f)) ? ok(`安装后 ${f} 落地`) : bad(`安装后 ${f} 落地`, "缺失");
