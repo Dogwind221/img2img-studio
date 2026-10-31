@@ -102,6 +102,12 @@ Agent 完整工作流（识图 → 路由门 → 生成 → QA）见 `SKILL.md`�
 # 编排脚本自测：链序 / 额度判定 / 代理 / CLI 契约（纯离线，不花钱、不联网）
 node scripts\selftest.mjs --verbose
 
+# 降级链 mock：本地 mock 服务让首选 429、备选 200，验证 429→备选成功 + fallbackDepth/attempts
+node scripts\verify-fallback.mjs
+
+# manifest 契约：schema 合法 + 消费端拒绝未知 version / 越界坐标 / 缺 files.edited
+node scripts\verify-manifest.mjs
+```
 # 直连引擎单测（TypeScript，bun 运行）
 bun test engines\direct-api\scripts
 ```

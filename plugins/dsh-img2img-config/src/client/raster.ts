@@ -281,6 +281,78 @@ export function paintMarkers(
   }
 }
 
+/**
+ * 在预览画布上画「裁切填满 / 完整放入 / 拉伸」的视觉提示；只影响预览，不进导出图。
+ * cover 用红色半透明条标出会被裁掉的边缘，contain 压暗留白区域，stretch 只画目标框。
+ * @param ctx - 预览画布 2D 上下文。
+ * @param width - 画布宽度（目标尺寸）。
+ * @param height - 画布高度（目标尺寸）。
+ * @param natural - 原图像素尺寸。
+ * @param mode - 尺寸模式。
+ * @param label - 已本地化的一句说明文字。
+ */
+export function drawSizeGuides(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  natural: { width: number; height: number },
+  mode: SizeMode,
+  label: string,
+): void {
+  const line = Math.max(2, Math.round(Math.min(width, height) / 300))
+  const shade = (x: number, y: number, w: number, h: number, color: string): void => {
+    if (w <= 0 || h <= 0) return
+    ctx.setLineDash([])
+    ctx.fillStyle = color
+    ctx.fillRect(x, y, w, h)
+  }
+  ctx.save()
+  ctx.setLineDash([line * 4, line * 3])
+  ctx.lineWidth = line
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)'
+  ctx.strokeRect(line, line, Math.max(1, width - line * 2), Math.max(1, height - line * 2))
+
+  const sourceAspect = natural.width / Math.max(1, natural.height)
+  const targetAspect = width / Math.max(1, height)
+  if (mode === 'cover' && Math.abs(sourceAspect - targetAspect) > 0.001) {
+    if (sourceAspect > targetAspect) {
+      const band = Math.max(2, Math.round(((1 - targetAspect / sourceAspect) / 2) * width))
+      shade(0, 0, band, height, 'rgba(255, 69, 58, 0.35)')
+      shade(width - band, 0, band, height, 'rgba(255, 69, 58, 0.35)')
+    } else {
+      const band = Math.max(2, Math.round(((1 - sourceAspect / targetAspect) / 2) * height))
+      shade(0, 0, width, band, 'rgba(255, 69, 58, 0.35)')
+      shade(0, height - band, width, band, 'rgba(255, 69, 58, 0.35)')
+    }
+  } else if (mode === 'contain') {
+    const scale = Math.min(width / natural.width, height / natural.height)
+    const w = Math.round(natural.width * scale)
+    const h = Math.round(natural.height * scale)
+    const x = Math.round((width - w) / 2)
+    const y = Math.round((height - h) / 2)
+    shade(0, 0, x, height, 'rgba(0, 0, 0, 0.45)')
+    shade(width - x, 0, x, height, 'rgba(0, 0, 0, 0.45)')
+    shade(0, 0, width, y, 'rgba(0, 0, 0, 0.45)')
+    shade(0, height - y, width, y, 'rgba(0, 0, 0, 0.45)')
+  }
+
+  const fontSize = Math.max(12, Math.round(Math.min(width, height) / 26))
+  ctx.setLineDash([])
+  ctx.font = `600 ${fontSize}px system-ui, -apple-system, "Segoe UI", sans-serif`
+  const padding = Math.round(fontSize * 0.55)
+  const boxWidth = Math.min(width - padding * 2, ctx.measureText(label).width + padding * 2)
+  const boxHeight = fontSize + padding * 2
+  const boxX = Math.round((width - boxWidth) / 2)
+  const boxY = Math.round(height - boxHeight - padding)
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.62)'
+  ctx.fillRect(boxX, boxY, boxWidth, boxHeight)
+  ctx.fillStyle = '#ffffff'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(label, width / 2, boxY + boxHeight / 2)
+  ctx.restore()
+}
+
 /** The exported edited bitmap: base pixels plus the marker pins. */
 export function composeEdited(base: HTMLCanvasElement, markers: readonly MarkerItem[]): HTMLCanvasElement {
   const canvas = createCanvas(base.width, base.height)

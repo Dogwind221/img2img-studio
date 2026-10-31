@@ -969,8 +969,10 @@ async function generateOnce(task, providers, retries) {
   }
   const chain = chainIds.map((id) => configured.find((p) => p.id === id)).filter(Boolean);
   const errors = [];
+  let attempts = 0;
   for (const p of chain) {
     for (let attempt = 0; attempt <= retries; attempt++) {
+      attempts += 1;
       try {
         let resp;
         const args = { prompt, refs: images, size: sizePx, n, dialect };
@@ -985,7 +987,7 @@ async function generateOnce(task, providers, retries) {
         else if (p.id === "direct") resp = await directEngineGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images"), model, directProvider: task.directProvider });
         else if (p.id.startsWith("chatgpt-web@")) resp = await chatgptWebGenerate({ ...args, outputDir: task.outputDir || path.resolve("generated-images"), accountId: p.id.slice("chatgpt-web@".length) });
         else throw new Error(`未知供应商 ${p.id}`);
-        return { ok: true, provider: p.id, model: resp?._model || p.model, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
+        return { ok: true, provider: p.id, model: resp?._model || p.model, fallbackDepth: chain.indexOf(p), attempts, size: sizePx, files: await saveImages(resp, task.outputDir || path.resolve("generated-images"), `img-${Date.now()}-${Math.floor(Math.random() * 1000)}`) };
       } catch (e) {
         errors.push({ provider: p.id, attempt: attempt + 1, error: e.message });
         // 额度用尽：重试也没用，立即切下一个通道（免费版不设本地上限，用到服务端拒绝为止）
@@ -997,7 +999,7 @@ async function generateOnce(task, providers, retries) {
       }
     }
   }
-  return { ok: false, errors };
+  return { ok: false, fallbackDepth: null, attempts, errors };
 }
 
 /**
@@ -1109,18 +1111,19 @@ async function main() {
     skipExhausted: a.skipExhausted,
   }, providers, a.retries).catch((e) => {
     // 参数错误（如未知供应商）不该走「整链回落」：直接报错退出
-    if (a.json) console.log(JSON.stringify({ ok: false, errors: [{ provider: a.provider, error: e.message }] }, null, 2));
+    if (a.json) console.log(JSON.stringify({ ok: false, fallbackDepth: null, attempts: 0, errors: [{ provider: a.provider, error: e.message }] }, null, 2));
     console.error(`生图失败: ${e.message}`);
     process.exit(1);
   });
 
   if (result.ok) {
-    console.log(JSON.stringify({ ok: true, provider: result.provider, model: result.model, size: result.size, files: result.files }, null, 2));
-    process.exit(0);
+    console.log(JSON.stringify({ ok: true, provider: result.provider, model: result.model, fallbackDepth: result.fallbackDepth, attempts: result.attempts, size: result.size, files: result.files }, null, 2));
+    // 让进程自然退出：Windows 上 stdout 管道未 flush 就 process.exit 可能触发 libuv 断言。
+    return;
   }
   console.error("所有供应商均失败:");
   for (const e of result.errors) console.error(`  - ${e.provider} (第${e.attempt}次): ${e.error}`);
-  if (a.json) console.log(JSON.stringify({ ok: false, errors: result.errors }, null, 2));
+  if (a.json) console.log(JSON.stringify({ ok: false, fallbackDepth: null, attempts: result.attempts, errors: result.errors }, null, 2));
   await sleep(300);
   process.exit(1);
 }

@@ -7,10 +7,10 @@
  * staging them into the composer belongs to the dock entry.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react'
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import type { DraftImage, Translator } from './faces.ts'
 import {
-  canvasToBlob, composeEdited, context2d, drawBase, fitWithin, paintMarkers, renderMask,
+  canvasToBlob, composeEdited, context2d, drawBase, drawSizeGuides, fitWithin, paintMarkers, renderMask,
   type CutoutSpec, type MarkerItem, type SizeMode, type SizeSpec, type Stroke,
 } from './raster.ts'
 import type { EditManifest } from './manifest.ts'
@@ -131,6 +131,11 @@ export function EditorModal({ source, t, onCancel, onApply }: EditorModalProps) 
     [image, size.width, size.height, size.mode, cutout.enabled, cutout.tolerance],
   )
   const display = base === null ? null : fitWithin(base.width, base.height, VIEW_MAX_WIDTH, VIEW_MAX_HEIGHT)
+  const guideLabel = size.mode === 'cover'
+    ? t('editor.guideCover')
+    : size.mode === 'contain'
+      ? t('editor.guideContain')
+      : t('editor.guideStretch')
 
   useEffect(() => {
     const target = previewRef.current
@@ -140,7 +145,8 @@ export function EditorModal({ source, t, onCancel, onApply }: EditorModalProps) 
     ctx.drawImage(base, 0, 0, target.width, target.height)
     if (strokes.length > 0) ctx.drawImage(renderMask(strokes, target.width, target.height, 'overlay'), 0, 0)
     paintMarkers(ctx, markers, target.width, target.height, activeId ?? undefined)
-  }, [base, markers, strokes, activeId])
+    drawSizeGuides(ctx, target.width, target.height, natural, size.mode, guideLabel)
+  }, [base, markers, strokes, activeId, natural, size.mode, guideLabel])
 
   const pointerAt = useCallback((event: ReactPointerEvent<HTMLCanvasElement>): { x: number; y: number } => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -161,6 +167,32 @@ export function EditorModal({ source, t, onCancel, onApply }: EditorModalProps) 
       return Math.hypot(dx, dy) <= 18
     })
   }, [markers])
+
+  /**
+   * 标记行键盘操作：方向键微调（1%，Shift 5%）、Delete/Backspace 删除。
+   * 只在行本身获得焦点时生效，避免抢走文本框里的退格/方向键。
+   */
+  const onMarkerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>, marker: MarkerItem) => {
+    if (event.target !== event.currentTarget) return
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault()
+      setMarkers(previous => previous.filter(item => item.id !== marker.id))
+      if (activeId === marker.id) setActiveId(null)
+      return
+    }
+    const step = event.shiftKey ? 0.05 : 0.01
+    let dx = 0
+    let dy = 0
+    if (event.key === 'ArrowLeft') dx = -step
+    else if (event.key === 'ArrowRight') dx = step
+    else if (event.key === 'ArrowUp') dy = -step
+    else if (event.key === 'ArrowDown') dy = step
+    else return
+    event.preventDefault()
+    setMarkers(previous => previous.map(item => item.id === marker.id
+      ? { ...item, x: Math.min(1, Math.max(0, item.x + dx)), y: Math.min(1, Math.max(0, item.y + dy)) }
+      : item))
+  }, [activeId])
 
   const onPointerDown = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (busy) return
@@ -355,9 +387,18 @@ export function EditorModal({ source, t, onCancel, onApply }: EditorModalProps) 
 
             <div style={sectionStyle}>
               <span style={sectionTitleStyle}>{`${t('editor.markerTitle')} (${markers.length})`}</span>
+              <span style={hintStyle}>{t('editor.markerKeyboard')}</span>
               {markers.length === 0 && <span style={hintStyle}>{t('editor.markerEmpty')}</span>}
               {[...markers].sort((a, b) => a.id - b.id).map(marker => (
-                <div key={marker.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div
+                  key={marker.id}
+                  role="group"
+                  tabIndex={0}
+                  aria-label={`${t('editor.markerTitle')} ${marker.id}`}
+                  onFocus={() => { setActiveId(marker.id) }}
+                  onKeyDown={(event) => { onMarkerKeyDown(event, marker) }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 4, borderRadius: 6 }}
+                >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{
                       width: 20, height: 20, borderRadius: '50%', background: '#ff3b30', color: '#fff',

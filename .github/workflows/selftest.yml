@@ -18,5 +18,9 @@ jobs:
           bun-version: latest
       - name: 编排脚本自测（链序 / 额度 / 代理 / CLI 契约，纯离线）
         run: node scripts/selftest.mjs --verbose
+      - name: 降级链 mock（429 → 备选成功 + fallbackDepth/attempts）
+        run: node scripts/verify-fallback.mjs
+      - name: manifest 契约（schema + 消费端拒绝未知版本/越界坐标）
+        run: node scripts/verify-manifest.mjs
       - name: 直连引擎单测
         run: bun test engines/direct-api/scripts

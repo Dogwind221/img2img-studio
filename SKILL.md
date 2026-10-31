@@ -9,7 +9,7 @@ description: >
 
 # 图生图工作室（img2img-studio）
 
-> **路径约定（DSH 0.1.3+）**：本文档相对路径以**本技能资源目录**为基准解析（加载时 harness 给出 `Base directory for this skill`）；跨技能引用写 `..\dsh-vision-skill\...`（三个技能同根安装时成立）。
+> **路径约定（基线 DSH 0.1.3+，0.2.x 适配 —— 0.2.0-rc.2 复验）**：本文档相对路径以**本技能资源目录**为基准解析（加载时 harness 给出 `Base directory for this skill`）；跨技能引用写 `..\dsh-vision-skill\...`（三个技能同根安装时成立）。
 
 两层架构：
 
@@ -50,7 +50,7 @@ scripts/generate_image.mjs（多供应商自动降级）
    - 通道 = `chatgpt-web@<账号id>` → 直接 `generate_image.mjs --provider chatgpt-web@<账号id>`（脚本内部用无头浏览器 + 账号表里的 session token；也可走 `references/chatgpt-web-mode.md` 的可见浏览器流程）
    - 通道 = `codex-cli` → `generate_image.mjs --provider codex-cli`（用 Codex 客户端登录态，无需 API key）
    - 其他通道 → 选风格后读对应 `references/<mode>.md`，用 `generate_image.mjs --provider <id>` 生成
-5. 在最终交付里注明：**通道、风格、尺寸、模型** + Assumptions / Defaults。
+5. 在最终交付里注明：**通道、风格、尺寸、模型**，以及实际降级深度 `fallbackDepth` 与尝试次数 `attempts`（`--json` 有输出；`fallbackDepth=0` 表示首选通道一次成功，1/2… 表示降到了第几备选）+ Assumptions / Defaults。
 
 ### 订阅制通道（一级主通道）的账号与凭据
 
@@ -68,20 +68,20 @@ scripts/generate_image.mjs（多供应商自动降级）
 ## 主流程
 
 1. **解析输入（拿参考图路径）**：按这个顺序取路径——
-   - ① 消息里已经有 `Normalized copy (read-only; may be resized or re-encoded): <路径>`（DSH 0.1.5+ 会给）→ 可直接当 `--image`，**但它是归一化副本**（见下方质量警告）
-   - ② 只有 `attachmentId`（`sha256:<hex>`）→ 拼对象路径 `<DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>`，或用 `..\dsh-vision-skill\scripts\resolve_attachment.mjs` 换出路径（**i2i 必须**：`--image` 只吃路径）
-   - ③ 用户给了本地路径/URL → 直接用（**i2i 首选，见质量警告**）
-   注意这一步与模型是否多模态无关——多模态模型能用 `read_image` 直接"看"附件，但**当素材喂生图**要的是路径与画质，不是"能不能看见"。
-2. **L1 识图（必做，禁止跳过）**：先判定模型是否原生看图——**多模态模型**（`read_image` 可用）直接用它读图；**纯文本模型**走 dsh-vision-skill 的 `vision.js`（见下）。两种情况都必须拿到结构化描述，不能凭空编造图片内容。**多模态 + 只做文生图（不传参考图）时，整个流程不需要 dsh-vision-skill**。
+   - ① 消息里已有 `Normalized copy (read-only; may be resized or re-encoded): <路径>`（DSH 0.1.5+ 原生给出）→ 可直接当 `--image`（归一化副本，见下方画质警告）
+   - ② 只有 `attachmentId`（`sha256:<hex>`）→ 拼对象路径 `<DSH_HOME>\attachments\v1\objects\<hex前2位>\<hex>`，或用 `..\dsh-vision-skill\scripts\resolve_attachment.mjs` 换出路径（`--image` 只吃路径）
+   - ③ 用户给了本地路径/URL → 直接用（**i2i 首选**）
+   与模型是否多模态无关：**当素材喂生图**要的是路径与画质，不是"能不能看见"。
+2. **L1 识图（必做，禁止跳过）**：多模态模型（`read_image`）直接读图，纯文本模型走 dsh-vision-skill 的 `vision.js`（见下）；两种情况都必须拿到结构化描述，不能凭空编造图片内容。**多模态 + 只做文生图（不传参考图）时整个流程不需要 dsh-vision-skill。**
 3. **模式确认**：Step 0 已确定通道与风格；此处读取对应 `references/<mode>.md`（photo-art 含 zine 子风格 / ecommerce / chatgpt-web）。
 4. **构建 Prompt**：按模式文档的模板 + 识图描述注入。**任何 Prompt 都必须独立可生成**（即使图生图失败回退 t2i 也能用）——把主体描述完整写进文字。
 5. **生成**：通道为 chatgpt-web 时走浏览器出图（chatgpt-web-mode.md）；否则调 `scripts/generate_image.mjs --provider <通道>`（用法见下），参考图传原图；供应商自动探测降级。
 6. **QA 检查**：见下方清单；不合格修正后重生成。
-7. **交付**：给生成文件路径 + **通道/风格/尺寸/模型** + 关键假设；附最终 Prompt 便于用户复现。
+7. **交付**：给生成文件路径 + **通道/风格/尺寸/模型** + `fallbackDepth`/`attempts`（没降级就写 0/1）+ 关键假设；附最终 Prompt 便于用户复现。
 
 ## GUI 图像编辑（image-editor 模式）
 
-面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-config` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸，点「放回输入框」后：编辑结果与 `img2img-manifest.json` 作为**附件**回到输入框，输入框里只多出**一个胶囊**「图片编辑 · N 处标记」——JSON 不进正文，胶囊在发送时展开成说明块（附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest），模型看到的与旧版写块完全一致。胶囊插不进去时退化为正文里 `[img2img] … [/img2img]` 块（不含 `JSON:` 行，清单在附件里）。完整参考：`references/image-editor.md`。
+面板在**输入框上方 dock 的「图片编辑」**条目（`dsh-img2img-config` 插件，`conversation.input.dock`，**输入框里有图片时才出现**）。用户点它打开编辑器做标记/抠图/涂抹擦除/改尺寸（标记行支持 Tab 聚焦 + 方向键微调 + Delete 删除；调整大小的预览会用红色/深色遮罩标出裁切/留白），点「放回输入框」后：编辑结果与 `img2img-manifest.json` 作为**附件**回到输入框，输入框里只多出**一个胶囊**「图片编辑 · N 处标记」——JSON 不进正文，胶囊在发送时展开成说明块（附件清单、标记坐标、请求动作，以及一行 `JSON:` manifest），模型看到的与旧版写块完全一致。胶囊插不进去时退化为正文里 `[img2img] … [/img2img]` 块（不含 `JSON:` 行，清单在附件里），并在 dock 上显示「已切到文本模式」提示（不是静默降级）。清单结构以插件包 `manifest.schema.json`（version 1）为准，`edit_image.mjs manifest` 会先校验再执行。完整参考：`references/image-editor.md`。
 
 | 用户动作 | agent 动作 |
 |---|---|
@@ -104,16 +104,15 @@ node "scripts\edit_image.mjs" erase --image "03-erased.png" --mask mask.png --pr
 
 ## L1 识图
 
-**第一步：判定走哪条路（DSH 0.1.3+，禁止无脑调脚本）**
+**第一步：判定走哪条路（基线 DSH 0.1.3+；0.2.x 适配 —— 0.2.0-rc.2 复验，禁止无脑调脚本）**
 
 | 当前模型 | L1 做法 |
 |---|---|
-| **多模态**（`read_image` 可用，或模型配置 `inputModalities` 含 `image`） | 直接 `read_image` 读图并自己总结主体/构图/色彩/材质/情绪/文字——**不跑 `vision.js`**（省外部额度、免一次网络往返） |
+| **多模态**（`read_image` 可用，或模型配置 `inputModalities` 含 `image`） | 直接 `read_image` 读图并自己总结主体/构图/色彩/材质/情绪/文字——**不跑 `vision.js`** |
 | **纯文本**（`read_image` 报 `does not declare image input` 等） | 走下方脚本识别链（多模型降级 + 备用供应商） |
 
-> 判定方法：调用一次 `read_image`；成功即多模态。也可先跑 `node "..\dsh-vision-skill\scripts\vision.js" guard` 看判定（无显式信号时返回 `null`，仍需按 `howToDecide` 探测）。
-> 需要**强结构化 JSON 契约**（`--schema img2img|ecom|ground`，带字段校验与损坏重试）时，即使模型是多模态也值得调一次脚本；只需粗略理解图片时不要调。
-> **本技能对 dsh-vision-skill 是条件依赖**：多模态会话直接 `read_image` 即可识图；只有当①会话模型是纯文本、或②拿不到附件现成路径（需 `resolve_attachment.mjs`）、或③想复用它的识图 key 时，才需要装它。
+**这是 0.2.x 的原生行为**：调用一次 `read_image` 即知走哪条路；只有**纯文本模型**才需要 dsh-vision-skill 的识别链。需要**强结构化 JSON 契约**（`--schema img2img|ecom|ground`）时，即使多模态也值得调一次脚本；只需粗略理解图片时不要调。
+本技能对 dsh-vision-skill 是**条件依赖**：只有①会话模型是纯文本、或②只剩 `attachmentId` 拿不到路径（需 `resolve_attachment.mjs`）、或③想复用它的识图 key 时才需要装。
 
 ### ⚠️ 参考图画质：归一化副本 ≠ 原图
 
@@ -181,6 +180,8 @@ node "scripts\generate_image.mjs" --prompt "..." --skip-exhausted --output-dir "
 **尺寸语义**：`--size` 给比例（`1:1` / `16:9` / `2.35:1`）时按 `--quality` 档位换算；给显式像素（`1024x1536`）则**原样透传**，不再被档位放大。
 
 **参数错误**：`--provider` 写了不存在的通道会**直接报错退出**（不会静默回落成整链），避免「以为指定了 A 却跑了 B」。
+
+**降级可观测**：成功时 `--json` 输出带 `provider` / `model` / `fallbackDepth`（0=首选通道成功，1=降到第一个备选…）/ `attempts`（总尝试次数）；失败时输出 `errors[]`（每条含 provider、第几次尝试、错误文本）+ `attempts`。交付时按上一条要求如实汇报，不要只说"生成了"。
 
 供应商优先级（auto）：`openai` → `dashscope`（默认，复用识图 key）→ `zai`（GLM-Image，文本渲染强）→ `seedream`（豆包）→ `minimax`（海螺）→ `local`（chatgpt-web 类）。可 `--provider <id>` 强制；`codex-cli` 需 codex CLI 已登录（用 Codex/ChatGPT 订阅出图，无 API key）。
 
@@ -267,6 +268,8 @@ bun "engines\direct-api\scripts\main.ts" --batchfile batch.json --jobs 4
 > **面板优先（DSH 0.1.3+）**：Web 端 **Settings → 识图与生图** 填各通道 API Key / 模型 / 端点 / 优先级，保存后自动同步到 `scripts/.env`（`GEN_PROVIDER_ORDER`、各 key、`IMG_CHATGPT_WEB_ACCOUNTS`）与 `..\dsh-vision-skill\scripts\.env`（`VISION_PROVIDERS` 等），新会话生效；手动改文件会被面板下次保存覆盖。技能根目录可用 `DSH_SKILLS_DIR` 覆盖（默认 `~/.agents/skills`）。
 >
 > 面板随本技能自带的插件 `plugins/dsh-img2img-config` 一起发布（同一个包还提供输入框里的「图片编辑」）——**装了技能再构建 + 装配这个插件就有面板**，构建与装配两步见 `README.md` 的「安装 → 可选：装自带插件」。技能本体不装插件也能纯命令行出图，只是没有 GUI 配置页。
+>
+> **面板排障（0.3.0+）**：每张通道卡片展开后有「测试」（探活不花钱）/「试跑 1 张」（真实出图一张，会花额度）/「复制命令」（复制固定该通道的 `--provider …` 命令）；「＋ 添加通道」弹层会跑 `--list-providers` 标注本机已就绪的通道。ChatGPT 网页账号在下方账号库新增/改名/删除时，会自动投影成 `chatgpt-web@<账号id>` 生图通道（登录态只在账号库存一份）。**升级插件后需重启 DSH 宿主**，客户端 bundle 才会换新。
 
 在 `scripts/.env` 或环境变量（脚本会自动回退读取 `..\dsh-vision-skill\scripts\.env` 的 `VISION_API_KEY`，所以**零配置也能用 DashScope 出图**）：
 

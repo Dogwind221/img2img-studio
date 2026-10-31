@@ -124,6 +124,9 @@ export function EditorDock({ sessionId, useInput, inputActions, editor, t }: Edi
     })
     if (!inserted) {
       inputActions.setDraft(mergeDraft(draft, buildBrief(result.manifest, { legend, carrier: 'draft' })))
+      setTargetId(null)
+      setNotice(t('dock.fallback'))
+      return
     }
     setTargetId(null)
     setNotice(t('dock.done'))

@@ -5,7 +5,7 @@
  * 建出来，否则 writeFileSync 会以 ENOENT 失败，把整次「保存」连带弄挂。
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -54,7 +54,10 @@ export function writeEnv(file: string, updates: EnvMap): EnvMap {
   const lines: string[] = []
   if (existsSync(file)) {
     const text = readFileSync(file, 'utf8')
-    for (const raw of text.split(/\r?\n/)) {
+    // 末尾换行会 split 出一个空串；先摘掉，否则每次重写都会多长一行空行。
+    const rawLines = text.split(/\r?\n/)
+    if (rawLines[rawLines.length - 1] === '') rawLines.pop()
+    for (const raw of rawLines) {
       const line = raw.trim()
       const eq = line.indexOf('=')
       if (eq > 0) {
@@ -86,7 +89,19 @@ export function writeEnv(file: string, updates: EnvMap): EnvMap {
       lines.push(`${k}=${v}`)
     }
   }
+  // 内容没变就不碰磁盘：探测/测试会反复 syncEnv，避免无意义的 mtime 变更与写 I/O。
+  const nextText = lines.join('\n') + '\n'
+  if (existsSync(file) && readFileSync(file, 'utf8') === nextText) return current
+
   mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, lines.join('\n') + '\n', 'utf8')
+  // 先写同目录临时文件再 rename：进程被杀/写一半时不会留下半截 .env。
+  const temporary = `${file}.tmp-${process.pid.toString(36)}-${Date.now().toString(36)}`
+  writeFileSync(temporary, nextText, 'utf8')
+  try {
+    renameSync(temporary, file)
+  } catch (error) {
+    rmSync(temporary, { force: true })
+    throw error
+  }
   return current
 }

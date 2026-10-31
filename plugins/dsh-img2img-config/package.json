@@ -1,7 +1,7 @@
 {
   "name": "dsh-img2img-config",
-  "version": "0.1.0",
-  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小）；② 设置页「识图与生图」供应商面板（三级优先级、拖拽排序、余额探测、ChatGPT 网页账号库），保存即写回两个 skill 的 scripts/.env",
+  "version": "0.6.0",
+  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小）；② 设置页「识图与生图」供应商面板（供应商目录选择 + 脚本扫描标注、账号库驱动 chatgpt-web 通道、每行测试/试跑/复制命令、保存前预览、余额探测；中/英双语），保存即写回两个 skill 的 scripts/.env",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -9,12 +9,16 @@
   "files": [
     "lib",
     "src",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "manifest.schema.json"
   ],
   "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.1"
+  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.0-rc <5",
-    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc <2"
+    "@deepseek-ai/cordis": ">=4.0.0-rc",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
@@ -26,7 +30,9 @@
   "scripts": {
     "build": "bash scripts/build.sh",
     "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "verify": "node scripts/verify-i18n.mjs && node scripts/verify-catalog.mjs && node scripts/verify-http.mjs",
+    "sync": "node scripts/sync-skill.mjs"
   },
   "exports": {
     ".": {

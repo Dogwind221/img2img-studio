@@ -173,6 +173,44 @@ function parseMarkers(file) {
   }));
 }
 
+/**
+ * 校验面板导出的 img2img-manifest.json（version 1）。
+ * 只校验结构/范围，未知字段原样保留；不合法时报出具体字段，避免下游拿到半截数据。
+ * @param {unknown} raw - 解析后的 manifest 对象。
+ * @returns {object} 规范化后的 manifest（markers 坐标转数字、缺省字段补默认值）。
+ */
+function validateManifest(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("manifest 必须是 JSON 对象");
+  if (raw.version !== 1) {
+    throw new Error(`manifest.version 必须是 1（当前 ${JSON.stringify(raw.version)}）；请升级 dsh-img2img-config 插件后重新编辑`);
+  }
+  if (!raw.files || typeof raw.files !== "object") throw new Error("manifest.files 缺失（应为 { edited, marked?, mask? }）");
+  if (typeof raw.files.edited !== "string" || !raw.files.edited) throw new Error("manifest.files.edited 缺失");
+  for (const key of ["marked", "mask"]) {
+    if (raw.files[key] !== undefined && typeof raw.files[key] !== "string") {
+      throw new Error(`manifest.files.${key} 必须是字符串`);
+    }
+  }
+  const markers = raw.markers === undefined ? [] : raw.markers;
+  if (!Array.isArray(markers)) throw new Error("manifest.markers 必须是数组");
+  const normalizedMarkers = markers.map((marker, index) => {
+    if (!marker || typeof marker !== "object") throw new Error(`manifest.markers[${index}] 必须是对象`);
+    const x = Number(marker.x);
+    const y = Number(marker.y);
+    if (!Number.isFinite(x) || x < 0 || x > 1 || !Number.isFinite(y) || y < 0 || y > 1) {
+      throw new Error(`manifest.markers[${index}] 的 x/y 必须是 0–1 归一化坐标`);
+    }
+    if (marker.text !== undefined && typeof marker.text !== "string") {
+      throw new Error(`manifest.markers[${index}].text 必须是字符串`);
+    }
+    return { ...marker, id: Number.isFinite(marker.id) ? marker.id : index + 1, x, y, text: marker.text ?? "" };
+  });
+  if (raw.size !== undefined && (!Number.isFinite(Number(raw.size?.width)) || !Number.isFinite(Number(raw.size?.height)))) {
+    throw new Error("manifest.size.width/height 必须是数字");
+  }
+  return { ...raw, markers: normalizedMarkers, bgRemove: raw.bgRemove ?? {}, erase: raw.erase ?? {} };
+}
+
 async function download(url, out) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`下载结果图失败: HTTP ${res.status}`);
@@ -545,9 +583,15 @@ async function opManifest(a) {
   const inline = a.manifest.trim().startsWith("{");
   const manifestPath = inline ? "" : path.resolve(a.manifest);
   if (!inline && !fs.existsSync(manifestPath)) fail(`manifest 不存在: ${manifestPath}`);
-  const manifest = inline
-    ? JSON.parse(a.manifest.replace(/^\uFEFF/, "").trim())
-    : readJsonFile(manifestPath);
+  let parsedManifest;
+  try {
+    parsedManifest = inline
+      ? JSON.parse(a.manifest.replace(/^\uFEFF/, "").trim())
+      : readJsonFile(manifestPath);
+  } catch (error) {
+    fail(`manifest JSON 解析失败: ${error.message}`);
+  }
+  const manifest = validateManifest(parsedManifest);
   const manifestDir = inline ? path.resolve(a.imageDir || process.cwd()) : path.dirname(manifestPath);
   const workDir = path.resolve(a.outDir || path.join(manifestDir, "edited"));
   fs.mkdirSync(workDir, { recursive: true });

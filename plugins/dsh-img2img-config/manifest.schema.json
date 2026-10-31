@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Dogwind221/img2img-studio/raw/main/plugins/dsh-img2img-config/manifest.schema.json",
+  "title": "img2img-studio editor manifest (version 1)",
+  "description": "Machine-readable manifest emitted by the dsh-img2img-config image editor as img2img-manifest.json. version = 1. Consumers must tolerate and ignore unknown properties so later versions can add fields.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["version", "createdAt", "source", "size", "bgRemove", "erase", "markers", "files"],
+  "properties": {
+    "version": {
+      "const": 1,
+      "description": "Manifest format version. Refuse or degrade explicitly on unknown versions."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of the export."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "width", "height"],
+      "properties": {
+        "name": { "type": "string", "description": "Original uploaded file name." },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "size": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["width", "height", "mode", "changed"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "mode": { "enum": ["cover", "contain", "stretch"], "description": "How the source bitmap reached the target size." },
+        "changed": { "type": "boolean", "description": "Whether the user changed the size at all." }
+      }
+    },
+    "bgRemove": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["requested", "localPreview", "tolerance"],
+      "properties": {
+        "requested": { "type": "boolean", "description": "The user asked to remove the background." },
+        "localPreview": { "type": "boolean", "description": "The local flood-fill preview was applied to the exported base." },
+        "tolerance": { "type": "integer", "minimum": 0, "description": "Flood-fill tolerance (8-90 in the UI)." }
+      }
+    },
+    "erase": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["strokes", "prompt"],
+      "properties": {
+        "strokes": { "type": "integer", "minimum": 0, "description": "Number of brush strokes; mask file exists only when > 0." },
+        "prompt": { "type": "string", "description": "What should happen inside the brushed area." }
+      }
+    },
+    "markers": {
+      "type": "array",
+      "description": "Numbered change markers. x/y are normalized 0-1 with the top-left corner at (0,0).",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "x", "y", "text"],
+        "properties": {
+          "id": { "type": "integer", "minimum": 1 },
+          "x": { "type": "number", "minimum": 0, "maximum": 1 },
+          "y": { "type": "number", "minimum": 0, "maximum": 1 },
+          "text": { "type": "string", "description": "What to change at this position." }
+        }
+      }
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["edited"],
+      "description": "File names staged beside the manifest in the composer; resolve them relative to the manifest.",
+      "properties": {
+        "edited": { "type": "string", "minLength": 1, "description": "Clean base image (resize and cutout applied, no pins)." },
+        "marked": { "type": "string", "description": "Base image with numbered pins (marker guidance only; never the generation base)." },
+        "mask": { "type": "string", "description": "Brush mask PNG: white = rework, black = keep; same size as edited." }
+      }
+    }
+  }
+}
