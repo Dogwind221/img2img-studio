@@ -868,7 +868,8 @@ async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) 
     const page = await ctx.newPage();
     await page.goto('https://chatgpt.com/', { waitUntil: 'domcontentloaded', timeout: 90000 });
     // Cloudflare 过站 + 登录态渲染
-    await page.waitForSelector('#prompt-textarea', { timeout: 90000 });
+    // 2026-10 改版：输入框是 ProseMirror contenteditable，旧的 #prompt-textarea 已不存在
+      await page.waitForSelector('[contenteditable="true"][aria-label*="询问"], .ProseMirror[contenteditable="true"], #prompt-textarea', { timeout: 90000 });
     const loggedOut = await page.evaluate(() => /登录以获取基于已保存聊天/.test(document.body.innerText || ''));
     if (loggedOut) throw new Error(`账号 ${accountId} 登录态已失效（session token 过期？）`);
 
@@ -880,10 +881,10 @@ async function chatgptWebGenerate({ prompt, refs, size, outputDir, accountId }) 
       } catch { /* 参考图失败则退化为纯文本 */ }
     }
 
-    await page.locator('#prompt-textarea').first().click();
+    await page.locator('[contenteditable="true"][aria-label*="询问"], .ProseMirror[contenteditable="true"], #prompt-textarea').first().click();
     await page.keyboard.type(prompt, { delay: 8 });
     await page.waitForTimeout(600);
-    const send = page.locator('[data-testid="send-button"], #composer-submit-button').first();
+    const send = page.locator('[data-testid="send-button"], #composer-submit-button, button[aria-label*="发送"], button[aria-label*="Send"]').first();
     if (await send.count()) await send.click().catch(() => {});
     else await page.keyboard.press('Enter');
 

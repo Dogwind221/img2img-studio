@@ -1,0 +1,39 @@
+name: publish plugin
+
+# 可信发布（Trusted Publishing / OIDC）：不需要任何 npm token。
+# 前置条件：npm 包里已把本仓库+本 workflow 配置为 trusted publisher。
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: '只做 npm pack 检查，不真正发布'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugins/dsh-img2img-config
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      - name: 升级 npm（trusted publishing 需要较新的 npm）
+        run: |
+          npm install -g npm@latest
+          npm --version
+      - name: 检查 peer 范围不含上界（拒绝加载的常见原因）
+        run: node scripts/check-peer-ranges.mjs
+      - name: 包内容检查
+        run: npm pack --dry-run 2>&1 | tail -30
+      - name: 发布
+        if: ${{ !inputs.dry-run }}
+        run: npm publish --access public --provenance

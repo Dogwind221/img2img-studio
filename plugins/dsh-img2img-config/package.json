@@ -1,8 +1,7 @@
 {
   "name": "dsh-img2img-config",
   "version": "0.6.0",
-  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小）；② 设置页「识图与生图」供应商面板（供应商目录选择 + 脚本扫描标注、账号库驱动 chatgpt-web 通道、每行测试/试跑/复制命令、保存前预览、余额探测；中/英双语），保存即写回两个 skill 的 scripts/.env",
-  "private": true,
+  "description": "img2img-studio 的 GUI 插件（一个包两个面）：① 输入框里的图片编辑器（编号标记 / 移除背景 / 涂抹擦除 / 调整大小，支持键盘操作与裁切遮罩预览）；② 设置页「识图与生图」供应商面板（供应商目录选择 + 脚本扫描标注、账号库驱动 chatgpt-web 通道、每行测试/试跑/复制命令、保存前预览、余额探测；中/英双语），保存即写回两个 skill 的 scripts/.env",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
@@ -10,12 +9,11 @@
     "lib",
     "src",
     "cordis.patch.yml",
-    "manifest.schema.json"
+    "manifest.schema.json",
+    "README.md",
+    "LICENSE"
   ],
   "license": "MIT",
-  "engines": {
-    "dsh": ">=0.2.1-rc.1"
-  },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.0-rc",
     "@deepseek-ai/dsh-client-ui-slots": ">=0.0.1-rc"
@@ -31,6 +29,8 @@
     "build": "bash scripts/build.sh",
     "build:client": "tsdown && node scripts/normalize-client-banner.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
+    "test": "node scripts/check-peer-ranges.mjs && npm run typecheck",
+    "test:peer-ranges": "node scripts/check-peer-ranges.mjs",
     "verify": "node scripts/verify-i18n.mjs && node scripts/verify-catalog.mjs && node scripts/verify-http.mjs",
     "sync": "node scripts/sync-skill.mjs"
   },
@@ -61,5 +61,26 @@
       ],
       "platform": "web"
     }
+  },
+  "author": "Dogwind221",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dogwind221/img2img-studio.git",
+    "directory": "plugins/dsh-img2img-config"
+  },
+  "homepage": "https://github.com/Dogwind221/img2img-studio/tree/main/plugins/dsh-img2img-config",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "image-editor",
+    "vision",
+    "provider-config"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
